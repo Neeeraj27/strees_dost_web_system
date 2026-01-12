@@ -3,6 +3,7 @@ Flask-SocketIO==5.3.6
 python-socketio==5.11.4
 gunicorn==22.0.0
 eventlet==0.35.2
+gevent==24.2.1
 Flask-Caching==2.3.0
 
 SQLAlchemy==2.0.32

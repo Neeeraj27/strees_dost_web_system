@@ -41,8 +41,8 @@ def on_suggest_request(data):
 
     try:
         suggestions = _generate_ai_suggestions(cleaned)
-    except Exception as exc:  # pragma: no cover - defensive logging
-        logger.warning("suggest_request ai fallback: %s", exc)
+    except Exception:  # pragma: no cover - defensive logging
+        logger.exception("suggest_request ai fallback")
         suggestions = []
 
     if not suggestions:

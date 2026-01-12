@@ -1,6 +1,10 @@
 """Gunicorn / dev entrypoint."""
 from __future__ import annotations
 
+# Ensure cooperative sockets/threads before anything else for eventlet
+import eventlet
+eventlet.monkey_patch()
+
 import os
 import sys
 import time

@@ -1,9 +1,11 @@
 """Gunicorn / dev entrypoint."""
 from __future__ import annotations
 
-# IMPORTANT: apply eventlet patches before anything else
-import eventlet
-eventlet.monkey_patch()
+# IMPORTANT: apply eventlet patches before anything else in server mode.
+# Skip for CLI/Flask commands to avoid monkey-patch noise during migrations.
+if "flask" not in (sys.argv[0] or "").lower():
+    import eventlet
+    eventlet.monkey_patch()
 
 import os
 import sys

@@ -8,7 +8,7 @@ from flask_socketio import SocketIO
 
 db = SQLAlchemy()
 migrate = Migrate()
-socketio = SocketIO(cors_allowed_origins="*", async_mode="gevent")
+socketio = SocketIO(cors_allowed_origins="*", async_mode="eventlet")
 
 
 __all__ = ["db", "migrate", "socketio"]

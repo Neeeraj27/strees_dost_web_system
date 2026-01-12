@@ -16,12 +16,14 @@ logger = logging.getLogger(__name__)
 @socketio.on("connect")
 def on_connect():
     emit("server_hello", {"ok": True, "message": "Socket connected"})
+    logger.info("socket: client connected sid=%s", request.sid)
 
 
 @socketio.on("join_session")
 def on_join_session(data):
     session_id = str((data or {}).get("session_id") or "")
     if session_id:
+        logger.info("socket: join_session sid=%s session_id=%s", request.sid, session_id)
         join_room(session_id)
         emit("joined", {"ok": True, "session_id": session_id})
 
@@ -31,6 +33,7 @@ def on_suggest_request(data):
     """Return suggestions for initial text using OpenAI; falls back to local."""
     text = (data or {}).get("text") or ""
     cleaned = text.strip()
+    logger.debug("socket: suggest_request sid=%s len=%s", request.sid, len(cleaned))
 
     # Basic guardrails to avoid noisy spam
     if len(cleaned) < 4:

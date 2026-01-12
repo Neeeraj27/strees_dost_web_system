@@ -41,20 +41,25 @@ def start_session():
     try:
         body = request.get_json(force=True, silent=True) or {}
         text = (body.get("text") or "").strip()
+        current_app.logger.info("start_session: incoming text len=%s", len(text))
         if not text:
             return jsonify({"error": "text is required"}), 400
 
         session = create_session(text)
+        current_app.logger.info("start_session: created session_id=%s", session.id)
 
         prefill = prefill_slots_with_llm(text)
+        current_app.logger.debug("start_session: prefill=%s", prefill)
 
         causes = detect_causes(text)
+        current_app.logger.debug("start_session: causes=%s", causes)
         meta = dict(session.meta or {})
         meta["causes"] = causes
         meta["clarifier_queue"] = generate_initial_clarifiers(text) or []
         session.meta = meta
 
         session.active_domains = prefill.active_domains or activate_domains_from_causes(causes)
+        current_app.logger.debug("start_session: active_domains=%s", session.active_domains)
 
         for domain, slots in (prefill.prefill or {}).items():
             for slot, value in slots.items():
@@ -65,6 +70,7 @@ def start_session():
             session.active_domains = ["time_pressure", "distractions", "academic_confidence"]
 
         save_session(session)
+        current_app.logger.info("start_session: saved session_id=%s", session.id)
 
         return jsonify(
             {
@@ -76,13 +82,13 @@ def start_session():
         )
     except Exception as exc:  # pragma: no cover - defensive logging
         current_app.logger.exception("start_session failed: %s", exc)
-        # Surface the exception text temporarily to debug Render 500s
         return jsonify({"error": "internal error", "detail": str(exc)}), 500
 
 
 @bp.post("/<session_id>/answer")
 def answer(session_id: str):
     session = get_session(session_id)
+    current_app.logger.info("answer: session_id=%s", session_id)
     if not session:
         return jsonify({"error": "session not found"}), 404
     if session.status != "active":
@@ -137,6 +143,7 @@ def answer(session_id: str):
     slot = body.get("slot")
     domain = domain or current_question.get("domain")
     slot = slot or current_question.get("slot")
+    current_app.logger.debug("answer: domain=%s slot=%s", domain, slot)
 
     if not (domain and slot):
         return jsonify({"error": "domain/slot missing (no current_question found)"}), 400
@@ -183,6 +190,7 @@ def answer(session_id: str):
 @bp.post("/<session_id>/next-question")
 def next_question(session_id: str):
     session = get_session(session_id)
+    current_app.logger.info("next_question: session_id=%s", session_id)
     if not session or session.status != "active":
         return jsonify({"error": "invalid session"}), 400
 
@@ -274,6 +282,7 @@ def next_question(session_id: str):
         combo_spec = COMBO_SPECS[combo_spec_id]
         question = generate_combo_question(combo_spec_id, session, session.raw_initial_text or "")
     if combo_spec_id and combo_spec and question:
+        current_app.logger.info("next_question: serving combo %s", combo_spec_id)
         meta["total_questions_asked"] = total_questions + 1
         meta["current_question"] = {
             "type": "combo",
@@ -326,6 +335,7 @@ def next_question(session_id: str):
             return _complete_session(session)
 
         domain, slot = next_slot
+        current_app.logger.debug("next_question: picked domain=%s slot=%s", domain, slot)
         profile = session.filled_slots or {}
         domain_profile = profile.get(domain) or {}
 

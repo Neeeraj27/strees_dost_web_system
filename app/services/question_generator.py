@@ -35,6 +35,7 @@ def generate_question(
     context: dict | None = None,
 ) -> str | None:
     """Generate a slot-specific question with validation and fallback."""
+    logger.debug("generate_question: domain=%s slot=%s", domain, slot)
     context = context or {}
     stress_profile = context.get("filled_slots") or {}
     negated_slots = []
@@ -86,6 +87,7 @@ __all__ = ["generate_question", "get_generic_domain_question"]
 def generate_initial_clarifiers(initial_text: str) -> list[str]:
     """Generate up to 3 sharp, adversarial clarifier questions from the initial vent."""
     text = (initial_text or "").strip()
+    logger.debug("generate_initial_clarifiers: len=%s", len(text))
     if not text:
         return []
 

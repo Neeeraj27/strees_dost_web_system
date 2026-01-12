@@ -57,6 +57,7 @@ def extract_components(text: str) -> List[str]:
     Regenerate once on failure, then fallback keywords.
     """
     user_text = (text or "").strip()
+    logger.debug("extract_components: len=%s", len(user_text))
     if not user_text:
         return []
 
@@ -150,6 +151,7 @@ def filter_domains_by_denials(active_domains: List[str], initial_text: str | Non
 def detect_causes(user_text: str) -> Dict[str, bool]:
     """Return boolean cause map using constrained GPT output."""
     payload = {"user_text": (user_text or "")[:2000]}
+    logger.debug("detect_causes: len=%s", len(payload["user_text"]))
     default = {key: False for key in CAUSE_KEYS}
     if not payload["user_text"]:
         return default

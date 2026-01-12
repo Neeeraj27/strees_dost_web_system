@@ -172,6 +172,7 @@ def generate_popups(stress_profile: dict, emotion_signals: list[str] | None = No
         "stress_profile": stress_profile,
         "emotion_signals": emotion_signals or [],
     }
+    logger.debug("generate_popups: stress_profile_keys=%s signals=%s", list(stress_profile.keys()), emotion_signals)
     # include clarifier answers if present in meta
     clarifiers = stress_profile.get("__clarifiers__")
     if clarifiers:

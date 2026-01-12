@@ -76,7 +76,8 @@ def start_session():
         )
     except Exception as exc:  # pragma: no cover - defensive logging
         current_app.logger.exception("start_session failed: %s", exc)
-        return jsonify({"error": "internal error"}), 500
+        # Surface the exception text temporarily to debug Render 500s
+        return jsonify({"error": "internal error", "detail": str(exc)}), 500
 
 
 @bp.post("/<session_id>/answer")

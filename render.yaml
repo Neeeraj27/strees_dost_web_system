@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: stree-dost
+    runtime: python
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --worker-class eventlet -w 1 -b 0.0.0.0:${PORT:-5002} wsgi:app
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 5002
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: SOCKETIO_CORS_ALLOWED_ORIGINS
+        value: "*"
+      - key: MIN_QUESTIONS
+        value: "3"
+      - key: MAX_QUESTIONS
+        value: "6"
+      - key: MAX_DOMAIN_QUESTIONS
+        value: "2"
+    disk:
+      name: sqlite-data
+      mountPath: /opt/render/project/.render-data
+      sizeGB: 1

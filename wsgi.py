@@ -1,6 +1,10 @@
 """Gunicorn / dev entrypoint."""
 from __future__ import annotations
 
+# IMPORTANT: apply eventlet patches before anything else
+import eventlet
+eventlet.monkey_patch()
+
 import os
 import sys
 import time

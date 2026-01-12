@@ -38,41 +38,45 @@ bp = Blueprint("session", __name__, url_prefix="/session")
 
 @bp.post("/start")
 def start_session():
-    body = request.get_json(force=True, silent=True) or {}
-    text = (body.get("text") or "").strip()
-    if not text:
-        return jsonify({"error": "text is required"}), 400
+    try:
+        body = request.get_json(force=True, silent=True) or {}
+        text = (body.get("text") or "").strip()
+        if not text:
+            return jsonify({"error": "text is required"}), 400
 
-    session = create_session(text)
+        session = create_session(text)
 
-    prefill = prefill_slots_with_llm(text)
+        prefill = prefill_slots_with_llm(text)
 
-    causes = detect_causes(text)
-    meta = dict(session.meta or {})
-    meta["causes"] = causes
-    meta["clarifier_queue"] = generate_initial_clarifiers(text) or []
-    session.meta = meta
+        causes = detect_causes(text)
+        meta = dict(session.meta or {})
+        meta["causes"] = causes
+        meta["clarifier_queue"] = generate_initial_clarifiers(text) or []
+        session.meta = meta
 
-    session.active_domains = prefill.active_domains or activate_domains_from_causes(causes)
+        session.active_domains = prefill.active_domains or activate_domains_from_causes(causes)
 
-    for domain, slots in (prefill.prefill or {}).items():
-        for slot, value in slots.items():
-            set_slot_value(session.filled_slots, domain, slot, value)
-    add_negated_slots(session.filled_slots, prefill.negated_slots or [])
+        for domain, slots in (prefill.prefill or {}).items():
+            for slot, value in slots.items():
+                set_slot_value(session.filled_slots, domain, slot, value)
+        add_negated_slots(session.filled_slots, prefill.negated_slots or [])
 
-    if not session.active_domains:
-        session.active_domains = ["time_pressure", "distractions", "academic_confidence"]
+        if not session.active_domains:
+            session.active_domains = ["time_pressure", "distractions", "academic_confidence"]
 
-    save_session(session)
+        save_session(session)
 
-    return jsonify(
-        {
-            "session_id": str(session.id),
-            "status": session.status,
-            "active_domains": session.active_domains,
-            "prefilled": session.filled_slots,
-        }
-    )
+        return jsonify(
+            {
+                "session_id": str(session.id),
+                "status": session.status,
+                "active_domains": session.active_domains,
+                "prefilled": session.filled_slots,
+            }
+        )
+    except Exception as exc:  # pragma: no cover - defensive logging
+        current_app.logger.exception("start_session failed: %s", exc)
+        return jsonify({"error": "internal error"}), 500
 
 
 @bp.post("/<session_id>/answer")

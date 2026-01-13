@@ -492,6 +492,27 @@ def test_popup(session_id: str):
     return jsonify({"ok": True, "sent": True, "payload": payload})
 
 
+@bp.post("/<session_id>/mcq-response")
+def mcq_response(session_id: str):
+    """Capture MCQ poke responses for personalization."""
+    session = get_session(session_id)
+    if not session:
+        return jsonify({"error": "session not found"}), 404
+    body = request.get_json(force=True, silent=True) or {}
+    question = (body.get("question") or "").strip()
+    answer = (body.get("answer") or "").strip()
+    if not question:
+        return jsonify({"error": "question is required"}), 400
+
+    meta = dict(session.meta or {})
+    responses = list(meta.get("mcq_responses") or [])
+    responses.append({"question": question, "answer": answer})
+    meta["mcq_responses"] = responses[-20:]
+    session.meta = meta
+    save_session(session)
+    return jsonify({"ok": True, "stored": True})
+
+
 def _complete_session(session):
     session.status = "completed"
     stress_profile = session.filled_slots or {}

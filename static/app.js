@@ -10,11 +10,9 @@ const stageEls = {
 const logBox = $("logBox");
 const popupConsole = $("popupConsole");
 const popupOverlay = $("popupOverlay");
-const mcqOverlay = $("mcqOverlay");
 const popupQueue = [];
 let popupActive = false;
 let popupTimer = null;
-let mcqActive = false;
 const recentPopups = new Set();
 
 const loadingTextEl = $("loadingText");
@@ -174,12 +172,8 @@ function resetFlow() {
   if (integerPanel) integerPanel.style.display = "none";
   updateScoreMeta();
   setTestHint("");
-  popupSummary.textContent = "We’re releasing your personalized pulses now. Watch the center top.";
+  popupSummary.textContent = "We're releasing your personalized pulses now. Watch the center top.";
   popupOverlay.innerHTML = "";
-  if (mcqOverlay) {
-    mcqOverlay.innerHTML = "";
-    mcqOverlay.style.display = "none";
-  }
   log("reset_flow");
   setSessionUI(null, null);
   showStage("intro");
@@ -259,15 +253,6 @@ function logPopupEvent(obj) {
 
 function enqueuePopup(payload) {
   if (!payload) return;
-  if (payload.type === "mcq") {
-    if (mcqActive) return; // avoid overlapping MCQs
-    showMcqCard(payload);
-    return;
-  }
-  if (mcqActive) {
-    popupQueue.push(payload);
-    return;
-  }
   const message = String(payload.message || "");
   const parts = message
     .split("\n")
@@ -332,90 +317,6 @@ function showPopupCard(payload, done) {
     el.remove();
     done?.();
   }, duration);
-}
-
-// MCQ rendering --------------------------------------------------------------
-function showMcqCard(payload) {
-  if (!mcqOverlay) return;
-  mcqActive = true;
-  mcqOverlay.style.display = "flex";
-  mcqOverlay.innerHTML = "";
-
-  const msg = payload?.message || "";
-  const lines = msg.split("\n").map((l) => l.trim()).filter(Boolean);
-  const question = lines[0] || "Pick one:";
-  const optionsLine = lines[1] || "";
-  const parts = optionsLine.split("|").map((p) => p.trim()).filter(Boolean);
-
-  const el = document.createElement("div");
-  el.className = "mcq-card";
-
-  const qEl = document.createElement("div");
-  qEl.className = "mcq-question";
-  qEl.textContent = question;
-  el.appendChild(qEl);
-
-  const optsEl = document.createElement("div");
-  optsEl.className = "mcq-options";
-  parts.forEach((opt, idx) => {
-    const row = document.createElement("label");
-    row.className = "mcq-option";
-    const input = document.createElement("input");
-    input.type = "radio";
-    input.name = "mcq-option";
-    input.value = opt;
-    if (idx === 0) input.checked = true;
-    row.appendChild(input);
-    const span = document.createElement("span");
-    span.textContent = opt;
-    row.appendChild(span);
-    optsEl.appendChild(row);
-  });
-  el.appendChild(optsEl);
-
-  const actions = document.createElement("div");
-  actions.className = "mcq-actions";
-  const btnSubmit = document.createElement("button");
-  btnSubmit.className = "btn primary small";
-  btnSubmit.type = "button";
-  btnSubmit.textContent = "Submit";
-  btnSubmit.addEventListener("click", () => {
-    const picked = optsEl.querySelector('input[name="mcq-option"]:checked');
-    const answer = picked ? picked.value : "";
-    sendMcqResponse(question, answer);
-    closeMcqCard();
-  });
-  const btnSkip = document.createElement("button");
-  btnSkip.className = "btn ghost small";
-  btnSkip.type = "button";
-  btnSkip.textContent = "Skip";
-  btnSkip.addEventListener("click", () => {
-    sendMcqResponse(question, "");
-    closeMcqCard();
-  });
-  actions.appendChild(btnSubmit);
-  actions.appendChild(btnSkip);
-  el.appendChild(actions);
-
-  mcqOverlay.appendChild(el);
-}
-
-function closeMcqCard() {
-  if (mcqOverlay) {
-    mcqOverlay.innerHTML = "";
-    mcqOverlay.style.display = "none";
-  }
-  mcqActive = false;
-  processPopupQueue();
-}
-
-async function sendMcqResponse(question, answer) {
-  if (!sessionId) return;
-  try {
-    await postJSON(`/session/${sessionId}/mcq-response`, { question, answer });
-  } catch (err) {
-    log("mcq_response_error", err.message || String(err));
-  }
 }
 
 function escapeHTML(str) {

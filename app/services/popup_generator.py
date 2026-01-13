@@ -12,19 +12,6 @@ from .openai_client import chat_json
 
 logger = logging.getLogger(__name__)
 
-MCQ_PROMPT = """
-You generate up to 3 short MCQ-style "poke" questions to trigger focus for a JEE/NEET student.
-
-Return STRICT JSON:
-{"questions":[{"question":"...","options":["A) ...","B) ...","C) ...","D) ..."]}]}
-
-Rules:
-- Personalize using stress_profile and clarifier_answers (apps/games, weak_subjects, deadlines, comparisons, family pressure, name if known).
-- Keep each option short; only 4 options per question.
-- Tone is taunting/urgent but not abusive; reference their weak spots.
-- Questions should be answerable without extra context.
-"""
-
 FALLBACK_TEMPLATES = {
     "pressure": "Schedule feels crushing right now 😔\nSlow inhale, slow exhale, one step at a time.",
     "self_doubt": "Mind says you aren't prepared enough.\nCounter it: you have survived tougher days.",
@@ -79,8 +66,8 @@ def _ensure_minimum_popups(
     popups: list[dict],
     seen: set[tuple[str, str]],
     emotion_signals: list[str],
-    minimum: int = 12,
-    limit: int = 25,
+    minimum: int = 3,
+    limit: int = 15,
 ) -> list[dict]:
     augmented = list(popups)
     if len(augmented) < minimum:
@@ -199,42 +186,6 @@ def generate_popups(stress_profile: dict, emotion_signals: list[str] | None = No
     if clarifiers:
         payload["clarifier_answers"] = clarifiers
 
-    def _generate_mcq_pokes() -> list[dict]:
-        try:
-            mcq_payload = {
-                "stress_profile": stress_profile,
-                "clarifier_answers": clarifiers or [],
-            }
-            resp = chat_json(
-                model="gpt-4o-mini",
-                system=MCQ_PROMPT,
-                user=json.dumps(mcq_payload, ensure_ascii=False),
-            )
-            raw = (resp.choices[0].message.content or "").strip()
-            data = json.loads(raw)
-            questions = data.get("questions") or []
-            out: list[dict] = []
-            for q in questions:
-                if not isinstance(q, dict):
-                    continue
-                prompt = (q.get("question") or "").strip()
-                opts = q.get("options") or []
-                if not prompt or len(opts) < 2:
-                    continue
-                opts_str = " | ".join(str(o) for o in opts[:4])
-                msg = f"{prompt}\n{opts_str}"
-                out.append(
-                    {
-                        "type": "mcq",
-                        "message": normalize_two_lines(msg),
-                        "ttl": 9000,
-                    }
-                )
-            return out
-        except Exception as exc:  # pragma: no cover
-            logger.warning("MCQ_POKE_FAIL %s", exc)
-            return []
-
     for attempt in (1, 2):
         try:
             response = chat_json(
@@ -280,19 +231,6 @@ def generate_popups(stress_profile: dict, emotion_signals: list[str] | None = No
                     emotion_signals or [],
                 )
                 logger.info("POPUP_OK count=%s", len(augmented))
-                # inject some MCQ pokes every few popups
-                mcq_pokes = _generate_mcq_pokes()
-                if mcq_pokes:
-                    merged: list[dict] = []
-                    i = j = 0
-                    while i < len(augmented) or j < len(mcq_pokes):
-                        if i < len(augmented):
-                            merged.append(augmented[i])
-                            i += 1
-                        if i % 3 == 0 and j < len(mcq_pokes):
-                            merged.append(mcq_pokes[j])
-                            j += 1
-                    return merged
                 return augmented
 
             logger.warning("POPUP_EMPTY_AFTER_VALIDATION attempt=%s", attempt)

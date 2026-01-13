@@ -595,42 +595,6 @@ pre {
 .popup.panic { border-color: rgba(248, 113, 113, 0.7); }
 .popup.pressure { border-color: rgba(251, 191, 36, 0.7); }
 .popup.motivation { border-color: rgba(52, 211, 153, 0.7); }
-.popup.mcq { border-color: rgba(255, 135, 64, 0.7); }
-
-.mcq-card {
-  width: 100%;
-  background: linear-gradient(140deg, rgba(20, 26, 46, 0.94), rgba(59, 18, 97, 0.94));
-  border-radius: 26px;
-  padding: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  box-shadow: 0 40px 80px rgba(6, 10, 20, 0.5);
-  color: #f8fafc;
-}
-.mcq-question {
-  font-size: 18px;
-  margin-bottom: 12px;
-}
-.mcq-options {
-  display: grid;
-  gap: 8px;
-}
-.mcq-option {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-}
-.mcq-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 12px;
-}
-.mcq-actions button {
-  flex: 1;
-}
 
 @keyframes spin {
   from { transform: rotate(0deg); }

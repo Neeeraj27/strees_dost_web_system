@@ -117,12 +117,18 @@ Tone rules (IMPORTANT):
 - Keep it sharp and playful-snarky; avoid slurs/hate/abuse. Frustrate, not harm.
 - Reference common exam stressors (time pressure, distractions, parental expectations) in context.
 - If the user's name is known (from clarifier answers), use it in some popups to make it personal.
+Attention hooks (mix them across popups):
+- curiosity gap: hint at hidden cost, “tap if you dare”, “want to see where time went?”
+- micro-CTA: “Snap back for 2 Qs”, “Claim 5 focus points”, “Silence me for 5 mins?”
+- social proof/leaderboard: “Friend <Name> solved 3 Qs while you scrolled.”
+- timer pressure: explicit countdowns, “⏳ 7 mins till next block.”
+- faux system nudges: “Focus Mode Alert: background apps detected – tap to resume.”
 
 Personalization:
 - Use stress_profile details (weak_subject, phone_app/gaming_app, friend_name/comparison_person, family_member, deadlines/time pressure).
 - If weak_subject exists, weave it into line 1 or 2 to poke at it.
 - If family_member present, you MAY prefix with "Mom:", "Dad:", or "Family:".
-- If friend_name/comparison_person present, you MAY prefix with "<Name>:".
+- If friend_name/comparison_person present, you MAY prefix with "<Name>:". 
 - If clarifier_answers include a name, sprinkle it in for extra sting.
 
 TTL:

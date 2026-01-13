@@ -66,8 +66,8 @@ def _ensure_minimum_popups(
     popups: list[dict],
     seen: set[tuple[str, str]],
     emotion_signals: list[str],
-    minimum: int = 3,
-    limit: int = 15,
+    minimum: int = 40,
+    limit: int = 50,
 ) -> list[dict]:
     augmented = list(popups)
     if len(augmented) < minimum:
@@ -102,7 +102,7 @@ Allowed types ONLY:
 distraction, self_doubt, panic, pressure, motivation, parental_pressure, fear, doubt, stress, anxiety
 
 Hard limits:
-- Generate 15-20 popups.
+- Generate 40-50 popups.
 - message must be EXACTLY 2 lines using \\n.
 - Total message length <= 180 characters.
 - Each line <= 90 characters.
@@ -115,7 +115,7 @@ Tone rules (IMPORTANT):
 - Jab using the student's own stress_profile details (apps, weak_subject, family pressure, comparisons, time left).
 - Use rhetorical questions/taunts to spike urgency; no therapy tone, no long advice paragraphs.
 - Keep it sharp and playful-snarky; avoid slurs/hate/abuse. Frustrate, not harm.
-- Reference common exam stressors (time pressure, distractions, parental expectations) in context.
+- Reference whatever they shared (exams or not): time they waste, people they fear, money/pressure, relationships. Use it against them.
 - If the user's name is known (from clarifier answers), use it in some popups to make it personal.
 Attention hooks (mix them across popups):
 - curiosity gap: hint at hidden cost, “tap if you dare”, “want to see where time went?”
@@ -244,7 +244,7 @@ def generate_popups(stress_profile: dict, emotion_signals: list[str] | None = No
 
     fallback = _fallback_popups(3, set(), emotion_signals or [])
     if fallback:
-        return fallback[:15]
+        return fallback[:50]
 
     return []
 

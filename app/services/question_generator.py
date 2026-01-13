@@ -12,16 +12,16 @@ from .generic_questions import get_generic_domain_question
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT_QUESTION = """
-You write ONE sharp, confrontational follow-up for an Indian JEE/NEET student based on their own words + prior answers.
+You write ONE sharp, confrontational follow-up that uses the user's own words + prior answers to push them and make them uncomfortable.
 
 Return STRICT JSON only:
 {"question":"..."}
 
 Rules:
 - Single question, ends with "?" — no numbering/preamble.
-- Make it feel like you read them: use student_text, clarifier_answers, filled_slots (apps, weak_subjects, time left, names, habits). Quote their phrases.
-- Apply pressure: expose contradictions, urgency, and costs of their behavior. Demand specifics (numbers, names, timings, frequency, “why not already?”). Avoid yes/no.
-- NEVER ask for info they already revealed; push deeper (e.g., if they said “maths is killing me,” don’t ask “which subject?”; ask “which maths chapter/score/time you wasted?”).
+- Make it feel like you read them: use student_text, clarifier_answers, filled_slots (apps, weak_subjects, family pressure, money, relationships, time, habits). Quote their phrases.
+- Apply pressure: expose contradictions, urgency, and costs of their behavior. Demand specifics (numbers, names, timings, “why not already?”, “who’s watching you fail?”). Avoid yes/no.
+- NEVER ask for info they already revealed; push deeper into the same thread (if they mention scrolling, ask exact hours/apps; if stress about people, ask names/words they said; if family, ask what happens when they fail).
 - Ask ONLY about the requested domain+slot. If __negated__ contains the slot, do NOT ask it.
 - Do not repeat last_question. No generic “tell me more,” no therapy tone.
 - Keep it crisp, simple English; light Hinglish is fine if it adds bite.

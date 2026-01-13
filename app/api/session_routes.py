@@ -55,7 +55,18 @@ def start_session():
         current_app.logger.debug("start_session: causes=%s", causes)
         meta = dict(session.meta or {})
         meta["causes"] = causes
-        meta["clarifier_queue"] = generate_initial_clarifiers(text) or []
+        clarifiers = generate_initial_clarifiers(text) or []
+        # Add a name probe only if not already included
+        needs_name = True
+        for q in clarifiers:
+            qlow = (q or "").lower()
+            if "call you" in qlow or "your name" in qlow or "name" in qlow:
+                needs_name = False
+                break
+        if needs_name:
+            clarifiers.append("What should I call you? Keep it short.")
+        # keep up to 3 sharp clarifiers
+        meta["clarifier_queue"] = clarifiers[:3]
         session.meta = meta
 
         session.active_domains = prefill.active_domains or activate_domains_from_causes(causes)

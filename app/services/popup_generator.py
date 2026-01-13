@@ -66,8 +66,8 @@ def _ensure_minimum_popups(
     popups: list[dict],
     seen: set[tuple[str, str]],
     emotion_signals: list[str],
-    minimum: int = 3,
-    limit: int = 15,
+    minimum: int = 12,
+    limit: int = 25,
 ) -> list[dict]:
     augmented = list(popups)
     if len(augmented) < minimum:
@@ -102,7 +102,7 @@ Allowed types ONLY:
 distraction, self_doubt, panic, pressure, motivation, parental_pressure, fear, doubt, stress, anxiety
 
 Hard limits:
-- Generate 10-12 popups.
+- Generate 15-20 popups.
 - message must be EXACTLY 2 lines using \\n.
 - Total message length <= 180 characters.
 - Each line <= 90 characters.
@@ -116,12 +116,14 @@ Tone rules (IMPORTANT):
 - Use rhetorical questions/taunts to spike urgency; no therapy tone, no long advice paragraphs.
 - Keep it sharp and playful-snarky; avoid slurs/hate/abuse. Frustrate, not harm.
 - Reference common exam stressors (time pressure, distractions, parental expectations) in context.
+- If the user's name is known (from clarifier answers), use it in some popups to make it personal.
 
 Personalization:
 - Use stress_profile details (weak_subject, phone_app/gaming_app, friend_name/comparison_person, family_member, deadlines/time pressure).
 - If weak_subject exists, weave it into line 1 or 2 to poke at it.
 - If family_member present, you MAY prefix with "Mom:", "Dad:", or "Family:".
 - If friend_name/comparison_person present, you MAY prefix with "<Name>:".
+- If clarifier_answers include a name, sprinkle it in for extra sting.
 
 TTL:
 - ttl between 7000 and 11000.

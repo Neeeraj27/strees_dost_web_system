@@ -364,7 +364,10 @@ def next_question(session_id: str):
             "slot": slot,
             "causes": meta.get("causes") or {},
         }
-        context["meta"] = {"last_question": last_question}
+        context["meta"] = {
+            "last_question": last_question,
+            "clarifier_answers": meta.get("clarifier_answers") or [],
+        }
 
         if slot == "__generic__":
             generic = get_generic_domain_question(domain)

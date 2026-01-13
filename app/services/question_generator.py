@@ -12,15 +12,16 @@ from .generic_questions import get_generic_domain_question
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT_QUESTION = """
-You write ONE sharp, confrontational follow-up for an Indian JEE/NEET student based on their own words.
+You write ONE sharp, confrontational follow-up for an Indian JEE/NEET student based on their own words + prior answers.
 
 Return STRICT JSON only:
 {"question":"..."}
 
 Rules:
 - Single question, ends with "?" — no numbering/preamble.
-- Make it feel like you read them: use student_text/excerpt/filled_slots (apps, weak_subjects, time left, names, habits).
+- Make it feel like you read them: use student_text, clarifier_answers, filled_slots (apps, weak_subjects, time left, names, habits). Quote their phrases.
 - Apply pressure: expose contradictions, urgency, and costs of their behavior. Demand specifics (numbers, names, timings, frequency, “why not already?”). Avoid yes/no.
+- NEVER ask for info they already revealed; push deeper (e.g., if they said “maths is killing me,” don’t ask “which subject?”; ask “which maths chapter/score/time you wasted?”).
 - Ask ONLY about the requested domain+slot. If __negated__ contains the slot, do NOT ask it.
 - Do not repeat last_question. No generic “tell me more,” no therapy tone.
 - Keep it crisp, simple English; light Hinglish is fine if it adds bite.
@@ -43,6 +44,7 @@ def generate_question(
         negated_slots = [slot for slot in stress_profile["__negated__"] if isinstance(slot, str)]
     meta = context.get("meta") or {}
     last_question = (meta.get("last_question") or "").strip()
+    clarifiers = meta.get("clarifier_answers") or []
 
     fallback = (FALLBACK_QUESTIONS.get(domain, {}) or {}).get(slot)
     if not fallback:
@@ -56,6 +58,7 @@ def generate_question(
         "negated_slots": negated_slots,
         "excerpt": excerpt or "",
         "last_question": last_question,
+        "clarifier_answers": clarifiers,
     }
 
     for attempt in (1, 2):

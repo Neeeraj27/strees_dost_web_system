@@ -16,7 +16,7 @@ A Flask + Socket.IO app that builds a student stress profile, asks guided questi
 - `DATABASE_URL=sqlite:///instance/stress.db` (or your Postgres URL)
 - `OPENAI_API_KEY=...` (required)
 - `SOCKETIO_CORS_ALLOWED_ORIGINS=*` (tighten for prod)
-- Flow tuning: `MIN_QUESTIONS` (3), `MAX_QUESTIONS` (6), `MAX_DOMAIN_QUESTIONS` (2)
+- Flow tuning: `MIN_QUESTIONS` (2), `MAX_QUESTIONS` (2), `MAX_DOMAIN_QUESTIONS` (2)
 - Acadza: `ACADZA_API_URL`, `ACADZA_API_KEY`, `ACADZA_AUTH` (optional bearer), `ACADZA_COURSE`, `ACADZA_USER_AGENT`, `ACADZA_VERIFY=true|false`, `QUESTION_IDS_CSV` (path to CSV of IDs)
 
 ## Database

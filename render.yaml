@@ -18,9 +18,9 @@ services:
       - key: SOCKETIO_CORS_ALLOWED_ORIGINS
         value: "*"
       - key: MIN_QUESTIONS
-        value: "3"
+        value: "2"
       - key: MAX_QUESTIONS
-        value: "6"
+        value: "2"
       - key: MAX_DOMAIN_QUESTIONS
         value: "2"
     disk:

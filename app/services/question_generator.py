@@ -140,8 +140,11 @@ def generate_question(
             logger.warning("QUESTION_LLM_FAIL attempt=%s err=%s", attempt, exc)
             question = ""
 
-        if question and question != last_question and is_valid_question(question):
-            return question
+        if (question and question != last_question and is_valid_question(question)
+           and uses_user_words(question, context.get("user_text", ""))
+           ):
+             return question
+
 
         logger.warning("Invalid question (attempt %s): %s", attempt, question)
 
@@ -149,6 +152,28 @@ def generate_question(
 
 
 __all__ = ["generate_question", "get_generic_domain_question"]
+
+def uses_user_words(question: str, user_text: str) -> bool:
+    """
+    Enforces collapse rule:
+    Question must reuse at least ONE non-trivial word
+    from the user's sentence.
+    """
+    q = question.lower()
+    u = user_text.lower()
+
+    banned = {
+        "how", "what", "when", "where", "why",
+        "many", "much", "often", "time", "hours",
+        "do", "you", "your", "feel"
+    }
+
+    user_tokens = [
+        w for w in u.replace("’", "'").split()
+        if len(w) > 3 and w not in banned
+    ]
+
+    return any(w in q for w in user_tokens)
 
 
 def generate_initial_clarifiers(initial_text: str) -> list[str]:

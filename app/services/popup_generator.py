@@ -93,7 +93,7 @@ def _explode_popup(validated: Popup) -> list[dict]:
     return exploded
 
 SYSTEM_PROMPT_POPUPS = """
-You generate intrusive, exam-stress pop-ups during a test for Indian JEE/NEET students.
+You generate intrusive, focus-breaking pop-ups during a high-stakes task.
 
 Return STRICT JSON only:
 {"popups":[{"type":"distraction","message":"...","ttl":8000}]}

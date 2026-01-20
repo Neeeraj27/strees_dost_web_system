@@ -89,6 +89,14 @@ STYLE:
 - No politeness.
 - No filler.
 - Light Hinglish allowed if it sharpens the hit.
+
+EXAMPLES (tone + structure only; always customize to their words):
+User: "I hate my friends."
+Q: "You said 'hate' — what did they do that was bad enough to earn that word?"
+User: "I get distracted easily."
+Q: "You said 'distracted' — what exactly steals your focus, and what do you dodge every time it happens?"
+User: "I have no time."
+Q: "You said 'no time' — where did today’s hours go instead of the one thing you claim matters?"
 """
 
 
@@ -255,7 +263,7 @@ def generate_initial_clarifiers(initial_text: str) -> list[str]:
         return []
 
     system = """
-You write up to 3 ultra-specific clarifier questions for a stressed JEE/NEET student based ONLY on their initial vent.
+You write up to 3 ultra-specific clarifier questions based ONLY on their initial vent.
 
 Return STRICT JSON:
 {"questions":["...","...","..."]}

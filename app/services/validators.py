@@ -11,6 +11,21 @@ _BANNED = [
     r"\bdiagnos(is|e)\b",
     r"\btrauma\b",
     r"\bdepress(ed|ion)\b",
+    r"\bsupport(ive|)\b",
+    r"\bcomfort(ing|)\b",
+    r"\bplease\b",
+    r"\bthank(s| you)\b",
+    r"\bkindly\b",
+    r"\bhope\b",
+    r"\bfeel better\b",
+    r"\byou('re| are) not alone\b",
+    r"\bi('m| am) here for you\b",
+    r"\bthat sounds (hard|tough)\b",
+    r"\bi understand\b",
+    r"\bcare\b",
+    r"\bempath(y|ize|ise)\b",
+    r"\bgentle\b",
+    r"\bsoft\b",
 ]
 
 

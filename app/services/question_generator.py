@@ -140,10 +140,13 @@ def generate_question(
             logger.warning("QUESTION_LLM_FAIL attempt=%s err=%s", attempt, exc)
             question = ""
 
-        if (question and question != last_question and is_valid_question(question)
-           and uses_user_words(question, context.get("user_text", ""))
-           ):
-             return question
+        if (
+            question
+            and question != last_question
+            and is_valid_question(question)
+            and uses_user_words(question, context.get("user_text", ""))
+        ):
+            return question
 
 
         logger.warning("Invalid question (attempt %s): %s", attempt, question)
@@ -154,26 +157,94 @@ def generate_question(
 __all__ = ["generate_question", "get_generic_domain_question"]
 
 def uses_user_words(question: str, user_text: str) -> bool:
-    """
-    Enforces collapse rule:
-    Question must reuse at least ONE non-trivial word
-    from the user's sentence.
-    """
-    q = question.lower()
-    u = user_text.lower()
+    """Require direct reuse of the user's exact wording."""
+    q = (question or "").lower()
+    u = (user_text or "").lower()
 
     banned = {
-        "how", "what", "when", "where", "why",
-        "many", "much", "often", "time", "hours",
-        "do", "you", "your", "feel"
+        "how",
+        "what",
+        "when",
+        "where",
+        "why",
+        "many",
+        "much",
+        "often",
+        "time",
+        "hours",
+        "do",
+        "you",
+        "your",
+        "feel",
+        "this",
+        "that",
+        "there",
+        "here",
+        "them",
+        "they",
+        "with",
+        "from",
+        "have",
+        "has",
+        "had",
     }
 
-    user_tokens = [
-        w for w in u.replace("’", "'").split()
-        if len(w) > 3 and w not in banned
-    ]
+    claim_words = {
+        "hate",
+        "cant",
+        "can't",
+        "unable",
+        "impossible",
+        "no",
+        "never",
+        "always",
+        "distracted",
+        "scrolling",
+        "gaming",
+        "reels",
+        "youtube",
+        "tired",
+        "burnout",
+        "burnt",
+        "lazy",
+        "dumb",
+        "stupid",
+        "bad",
+        "pressure",
+        "anxious",
+        "anxiety",
+        "panic",
+        "scared",
+        "fear",
+        "stress",
+        "stressed",
+        "alone",
+        "lonely",
+        "overwhelmed",
+        "busy",
+        "avoid",
+        "avoidance",
+    }
 
-    return any(w in q for w in user_tokens)
+    def normalize_token(token: str) -> str:
+        return "".join(ch for ch in token if ch.isalnum())
+
+    tokens = [normalize_token(t) for t in u.split()]
+    anchors = [t for t in tokens if t and (len(t) >= 4 or t in claim_words) and t not in banned]
+    anchors = list(dict.fromkeys(anchors))
+
+    if not anchors:
+        return True
+
+    matches = [t for t in anchors if t in q]
+    if len(anchors) >= 2 and len(matches) < 2:
+        return False
+
+    claim_in_user = [t for t in anchors if t in claim_words]
+    if claim_in_user and not any(t in q for t in claim_in_user):
+        return False
+
+    return True
 
 
 def generate_initial_clarifiers(initial_text: str) -> list[str]:
@@ -241,4 +312,3 @@ Rules:
             "If you had one hour today, where would you actually put it?",
         ]
     return fallback[:3]
-

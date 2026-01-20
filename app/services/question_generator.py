@@ -11,6 +11,88 @@ from .generic_questions import get_generic_domain_question
 
 logger = logging.getLogger(__name__)
 
+_CLAIM_WORDS = [
+    "hate",
+    "cant",
+    "can't",
+    "unable",
+    "impossible",
+    "no",
+    "never",
+    "always",
+    "distracted",
+    "scrolling",
+    "gaming",
+    "reels",
+    "youtube",
+    "tired",
+    "burnout",
+    "burnt",
+    "lazy",
+    "dumb",
+    "stupid",
+    "bad",
+    "pressure",
+    "anxious",
+    "anxiety",
+    "panic",
+    "scared",
+    "fear",
+    "stress",
+    "stressed",
+    "alone",
+    "lonely",
+    "overwhelmed",
+    "busy",
+    "avoid",
+    "avoidance",
+]
+
+_SOFT_BANNED = {
+    "how",
+    "what",
+    "when",
+    "where",
+    "why",
+    "many",
+    "much",
+    "often",
+    "time",
+    "hours",
+    "do",
+    "you",
+    "your",
+    "feel",
+    "this",
+    "that",
+    "there",
+    "here",
+    "them",
+    "they",
+    "with",
+    "from",
+    "have",
+    "has",
+    "had",
+}
+
+
+def _normalize_token(token: str) -> str:
+    return "".join(ch for ch in token if ch.isalnum())
+
+
+def _extract_user_tokens(user_text: str) -> list[str]:
+    tokens = [_normalize_token(t) for t in (user_text or "").lower().split()]
+    anchors = [
+        t for t in tokens if t and (len(t) >= 4 or t in _CLAIM_WORDS) and t not in _SOFT_BANNED
+    ]
+    return list(dict.fromkeys(anchors))
+
+
+def _extract_claim_words(user_text: str) -> list[str]:
+    tokens = [_normalize_token(t) for t in (user_text or "").lower().split()]
+    claims = [t for t in tokens if t in _CLAIM_WORDS]
+    return list(dict.fromkeys(claims))
 SYSTEM_PROMPT_QUESTION = """
 You write EXACTLY ONE follow-up question that TRAPS the user using their own sentence.
 
@@ -148,12 +230,15 @@ def generate_question(
             logger.warning("QUESTION_LLM_FAIL attempt=%s err=%s", attempt, exc)
             question = ""
 
-        if (
-            question
-            and question != last_question
-            and is_valid_question(question)
-            and uses_user_words(question, context.get("user_text", ""))
-        ):
+        if question and question != last_question and is_valid_question(question):
+            user_text = context.get("user_text", "")
+            if not uses_user_words(question, user_text):
+                logger.warning("Question missing user wording: %s", question)
+                continue
+            claim_words = _extract_claim_words(user_text)
+            if claim_words and not any(word in question.lower() for word in claim_words):
+                logger.warning("Question missing claim word %s: %s", claim_words, question)
+                continue
             return question
 
 
@@ -167,89 +252,13 @@ __all__ = ["generate_question", "get_generic_domain_question"]
 def uses_user_words(question: str, user_text: str) -> bool:
     """Require direct reuse of the user's exact wording."""
     q = (question or "").lower()
-    u = (user_text or "").lower()
-
-    banned = {
-        "how",
-        "what",
-        "when",
-        "where",
-        "why",
-        "many",
-        "much",
-        "often",
-        "time",
-        "hours",
-        "do",
-        "you",
-        "your",
-        "feel",
-        "this",
-        "that",
-        "there",
-        "here",
-        "them",
-        "they",
-        "with",
-        "from",
-        "have",
-        "has",
-        "had",
-    }
-
-    claim_words = {
-        "hate",
-        "cant",
-        "can't",
-        "unable",
-        "impossible",
-        "no",
-        "never",
-        "always",
-        "distracted",
-        "scrolling",
-        "gaming",
-        "reels",
-        "youtube",
-        "tired",
-        "burnout",
-        "burnt",
-        "lazy",
-        "dumb",
-        "stupid",
-        "bad",
-        "pressure",
-        "anxious",
-        "anxiety",
-        "panic",
-        "scared",
-        "fear",
-        "stress",
-        "stressed",
-        "alone",
-        "lonely",
-        "overwhelmed",
-        "busy",
-        "avoid",
-        "avoidance",
-    }
-
-    def normalize_token(token: str) -> str:
-        return "".join(ch for ch in token if ch.isalnum())
-
-    tokens = [normalize_token(t) for t in u.split()]
-    anchors = [t for t in tokens if t and (len(t) >= 4 or t in claim_words) and t not in banned]
-    anchors = list(dict.fromkeys(anchors))
+    anchors = _extract_user_tokens(user_text)
 
     if not anchors:
         return True
 
     matches = [t for t in anchors if t in q]
     if len(anchors) >= 2 and len(matches) < 2:
-        return False
-
-    claim_in_user = [t for t in anchors if t in claim_words]
-    if claim_in_user and not any(t in q for t in claim_in_user):
         return False
 
     return True

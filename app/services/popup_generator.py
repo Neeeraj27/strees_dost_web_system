@@ -118,6 +118,8 @@ Tone rules (IMPORTANT):
 - Keep it sharp and playful-snarky; avoid slurs/hate/abuse. Frustrate, not harm.
 - Reference whatever they shared (exams or not): time they waste, people they fear, money/pressure, relationships. Use it against them.
 - If the user's name is known (from clarifier answers), use it in some popups to make it personal.
+ - Do NOT invent apps, people, or situations. If a detail isn't in stress_profile or clarifier_answers, don't mention it.
+ - Quote or tightly paraphrase their exact wording when possible so it feels like a mirror.
 Attention hooks (mix them across popups):
 - curiosity gap: hint at hidden cost, “tap if you dare”, “want to see where time went?”
 - micro-CTA: “Snap back for 2 Qs”, “Claim 5 focus points”, “Silence me for 5 mins?”

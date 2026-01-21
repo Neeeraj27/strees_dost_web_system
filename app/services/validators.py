@@ -4,7 +4,6 @@ from __future__ import annotations
 import re
 
 _BANNED = [
-    r"\bwhy\b",
     r"\btherapy\b",
     r"\bcounsel(or|ing)\b",
     r"\bmental health\b",

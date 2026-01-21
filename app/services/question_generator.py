@@ -93,92 +93,89 @@ def _extract_claim_words(user_text: str) -> list[str]:
     tokens = [_normalize_token(t) for t in (user_text or "").lower().split()]
     claims = [t for t in tokens if t in _CLAIM_WORDS]
     return list(dict.fromkeys(claims))
+
+
+def question_matches_user_text(question: str, user_text: str) -> bool:
+    if not uses_user_words(question, user_text):
+        return False
+    claim_words = _extract_claim_words(user_text)
+    if claim_words and not any(word in (question or "").lower() for word in claim_words):
+        return False
+    return True
+
+
+def _force_brutal_fallback(user_text: str) -> str | None:
+    anchors = _extract_user_tokens(user_text)
+    claims = _extract_claim_words(user_text)
+    if claims:
+        word = claims[0]
+        return f"You said '{word}' - what happened that justified that word?"
+    if anchors:
+        word = anchors[0]
+        return f"You said '{word}' - what did you avoid because of it?"
+    return None
+
+
+def _brutal_clarifier_fallbacks(user_text: str, limit: int = 3) -> list[str]:
+    anchors = _extract_user_tokens(user_text)
+    claims = _extract_claim_words(user_text)
+    word = (claims[0] if claims else (anchors[0] if anchors else "")).strip()
+    if not word:
+        return []
+    candidates = [
+        f"You said '{word}' - what exactly triggered that word?",
+        f"Name who '{word}' is aimed at and what they did.",
+        f"What did '{word}' let you avoid today?",
+    ]
+    return candidates[:limit]
 SYSTEM_PROMPT_QUESTION = """
-You write EXACTLY ONE follow-up question that TRAPS the user using their own sentence.
+You generate ONE psychologically aggressive follow-up question.
 
-This is not a normal question.
-It is a mirror that turns their exact words against them.
+This is NOT clarification.
+This is NOT therapy.
+This is NOT neutral.
 
-Return STRICT JSON only:
-{"question":"..."}
+Your job is to turn the user's statement INTO A PERSONAL ACCUSATION.
 
-NON-NEGOTIABLE RULES:
-- One question only. Ends with "?".
-- You MUST directly quote or paraphrase the user's exact claim word (e.g. “can’t”, “unable”, “no focus”, “no time”).
-- The question must collapse if the user's sentence is removed.
-- Treat the user's sentence as an EXCUSE on trial. Your job is to cross-examine it.
+ASSUME the user is:
+- Avoiding responsibility
+- Projecting blame
+- Protecting ego
+- Hiding insecurity
 
-WORD-LEVEL ATTACK (MANDATORY):
+Ask ONE question that:
+- Attacks their motive, not their wording
+- Suggests an uncomfortable interpretation
+- Forces self-doubt
+- Sounds like it knows them too well
 
-First, identify the PRIMARY CLAIM TYPE in the user's sentence.
-Then attack it using the corresponding pattern below.
-
-CLAIM TYPES & ATTACK RULES:
-
-1) IMPOSSIBILITY CLAIM
-   (words like: can’t, unable, impossible, not possible)
-   → Force a binary: physically impossible OR chosen avoidance.
-   → Ask what would happen under forced conditions.
-
-2) CAPABILITY DENIAL
-   (no focus, no energy, no motivation, burnt out, tired)
-   → Expose selective capability elsewhere at the same time.
-   → Ask where that capability is being spent instead.
-
-3) RESOURCE SCARCITY
-   (no time, too busy, overloaded, exhausted schedule)
-   → Demand an accounting of TODAY’s resource usage.
-   → Ask what displaced the claimed priority.
-
-4) AVOIDANCE VIA DISTRACTION
-   (distracted, scrolling, gaming, reels, YouTube)
-   → Demand the substitute action + duration.
-   → Ask what specific task was avoided.
-
-5) FINALITY / FUTILITY
-   (too late, nothing works, already tried everything)
-   → Ask for the last concrete attempt and date.
-   → Expose exaggeration or premature surrender.
-
-6) IDENTITY CLAIM
-   (I’m not smart, I’m lazy, I’m bad at studies)
-   → Ask when this “identity” was proven and by whom.
-   → Force evidence or contradiction.
-
-MANDATORY:
-- Quote or directly paraphrase the user’s exact wording.
-- The question must collapse if their sentence is removed.
-
-
-DISALLOWED COMPLETELY:
-- Generic probing (“what’s stopping you”, “tell me more”)
-- Emotional or therapeutic language
-- Advice, empathy, reassurance
-- Questions that could apply to another student
-
-PRESSURE REQUIREMENTS:
-- Expose contradiction created by their own wording.
-- Force specificity that proves or disproves their claim.
-- Make the question uncomfortable but logically unavoidable.
-
-SCOPE:
-- Ask ONLY about the given domain + slot.
-- Do NOT invent apps, people, or situations not explicitly mentioned.
-- Do NOT repeat last_question.
+RULES:
+- One question only.
+- Ends with '?'.
+- No quoting like “you said”.
+- No empathy.
+- No advice.
+- No soft language.
+- No “what happened” or “can you explain”.
 
 STYLE:
-- Short, blunt, sharp.
-- No politeness.
-- No filler.
-- Light Hinglish allowed if it sharpens the hit.
+- Cold
+- Slightly hostile
+- Psychologically invasive
+- Like an elite coach or manipulator
 
-EXAMPLES (tone + structure only; always customize to their words):
-User: "I hate my friends."
-Q: "You said 'hate' — what did they do that was bad enough to earn that word?"
-User: "I get distracted easily."
-Q: "You said 'distracted' — what exactly steals your focus, and what do you dodge every time it happens?"
-User: "I have no time."
-Q: "You said 'no time' — where did today’s hours go instead of the one thing you claim matters?"
+GOOD EXAMPLES (STYLE ONLY):
+- “Are you angry at them, or at who you become around them?”
+- “Is this frustration really about them, or about your lack of progress?”
+- “Do you push people away before they can see through you?”
+
+BAD:
+- “What did they do?”
+- “Why do you feel this way?”
+- “Can you clarify?”
+
+Return STRICT JSON:
+{"question":"..."}
 """
 
 
@@ -232,17 +229,17 @@ def generate_question(
 
         if question and question != last_question and is_valid_question(question):
             user_text = context.get("user_text", "")
-            if not uses_user_words(question, user_text):
+            if not question_matches_user_text(question, user_text):
                 logger.warning("Question missing user wording: %s", question)
-                continue
-            claim_words = _extract_claim_words(user_text)
-            if claim_words and not any(word in question.lower() for word in claim_words):
-                logger.warning("Question missing claim word %s: %s", claim_words, question)
                 continue
             return question
 
 
         logger.warning("Invalid question (attempt %s): %s", attempt, question)
+
+    forced = _force_brutal_fallback(context.get("user_text", ""))
+    if forced and is_valid_question(forced):
+        return forced
 
     return fallback
 
@@ -301,7 +298,11 @@ Rules:
             for q in questions:
                 if isinstance(q, str):
                     q_clean = " ".join(q.strip().split())
-                    if q_clean.endswith("?") and len(q_clean) <= 140:
+                    if (
+                        q_clean.endswith("?")
+                        and len(q_clean) <= 140
+                        and question_matches_user_text(q_clean, text)
+                    ):
                         out.append(q_clean)
                 if len(out) >= 3:
                     break
@@ -310,22 +311,8 @@ Rules:
     except Exception:  # pragma: no cover
         out = []
 
-    # Lightweight fallback when the LLM fails
-    lowered = text.lower()
-    fallback: list[str] = []
-    if any(word in lowered for word in ["reel", "shorts", "scroll", "phone", "instagram", "youtube"]):
-        fallback.append("How many hours do you lose daily on reels/shorts, and at what time?")
-    if any(word in lowered for word in ["exam", "test", "paper", "mock"]):
-        fallback.append("How many days are left for your next big exam, and what's the scariest section?")
-    if any(word in lowered for word in ["math", "physics", "chemistry", "bio"]):
-        fallback.append("Which topic in that subject is currently killing your confidence?")
-    if any(word in lowered for word in ["friend", "topper", "compare", "rank"]):
-        fallback.append("Who are you comparing yourself to, and what's the gap that's bothering you?")
-    if any(word in lowered for word in ["mom", "dad", "parents", "family"]):
-        fallback.append("What exactly did your family say last about your studies, and how did it hit you?")
-    if not fallback:
-        fallback = [
-            "What's the single thing draining you the most right now?",
-            "If you had one hour today, where would you actually put it?",
-        ]
-    return fallback[:3]
+    fallback = _brutal_clarifier_fallbacks(text, limit=3)
+    if fallback:
+        return fallback[:3]
+
+    return []

@@ -5,7 +5,17 @@ from typing import List, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-PopupType = Literal["distraction", "self_doubt", "panic", "pressure", "motivation"]
+PopupType = Literal[
+    "distraction",
+    "self_doubt",
+    "panic",
+    "pressure",
+    "motivation",
+    "comparison",
+    "guilt",
+    "fear",
+    "system_warning",
+]
 
 TYPE_MAP = {
     "stress": "panic",
@@ -19,6 +29,10 @@ TYPE_MAP = {
     "pressure": "pressure",
     "motivation": "motivation",
     "distraction": "distraction",
+    "comparison": "comparison",
+    "guilt": "guilt",
+    "fear": "fear",
+    "system_warning": "system_warning",
     "girlfriend": "distraction",
 }
 

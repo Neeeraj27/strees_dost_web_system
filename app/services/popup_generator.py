@@ -1,4 +1,4 @@
-"""Generate stress popups via GPT with strict validation."""
+"""Generate stress popups via GPT - Sharp, Short, Cutting."""
 from __future__ import annotations
 
 import json
@@ -13,11 +13,11 @@ from .openai_client import chat_json
 logger = logging.getLogger(__name__)
 
 FALLBACK_TEMPLATES = {
-    "pressure": "Schedule feels crushing right now 😔\nSlow inhale, slow exhale, one step at a time.",
-    "self_doubt": "Mind says you aren't prepared enough.\nCounter it: you have survived tougher days.",
-    "panic": "Heart racing like the bell already rang.\nCount 5-4-3-2-1, eyes back to the sheet.",
-    "motivation": "Dream college still needs your fight.\nTiny effort now beats big regret later.",
-    "distraction": "Phone gossip will still be there later.\nGive me 10 focused mins, then check it.",
+    "pressure": "They're preparing. You're panicking.",
+    "self_doubt": "You know you're not ready. So do they.",
+    "panic": "Clock's ticking. You're not.",
+    "motivation": "Dreams don't wait. Neither do results.",
+    "distraction": "Phone won. You lost. Again.",
 }
 
 
@@ -38,27 +38,26 @@ def _fallback_popups(
     emotion_signals: list[str],
 ) -> list[dict]:
     created: list[dict] = []
-    for popup_type in _fallback_sequence(emotion_signals):
-        if len(created) >= count:
-            break
+    sequence = _fallback_sequence(emotion_signals)
+    if not sequence:
+        return created
+    idx = 0
+    while len(created) < count:
+        popup_type = sequence[idx % len(sequence)]
+        idx += 1
         message = FALLBACK_TEMPLATES.get(popup_type)
         if not message:
             continue
         key = (popup_type, message.strip())
         if key in seen:
             continue
-        lines = [ln.strip() for ln in message.split("\n") if ln.strip()]
-        for line in lines or [message]:
-            sub_key = (popup_type, line)
-            if sub_key in seen:
-                continue
-            payload = {
-                "type": popup_type,
-                "message": line,
-                "ttl": 12000,
-            }
-            created.append(payload)
-            seen.add(sub_key)
+        payload = {
+            "type": popup_type,
+            "message": message,
+            "ttl": 8000,
+        }
+        created.append(payload)
+        seen.add(key)
     return created
 
 
@@ -76,118 +75,221 @@ def _ensure_minimum_popups(
     return augmented[:limit]
 
 
-def _explode_popup(validated: Popup) -> list[dict]:
-    """Split multi-line messages into individual popup cards."""
-    lines = [ln.strip() for ln in (validated.message or "").split("\n") if ln.strip()]
-    base = {
-        "type": validated.type,
-        "ttl": validated.ttl,
-    }
-    if len(lines) <= 1:
-        payload = base | {"message": validated.message.strip()}
-        return [payload]
-
-    exploded: list[dict] = []
-    for line in lines:
-        exploded.append(base | {"message": line})
-    return exploded
+# ============================================================================
+# SHARP, SHORT, CUTTING POPUP PROMPT
+# ============================================================================
 
 SYSTEM_PROMPT_POPUPS = """
-You generate intrusive, focus-breaking pop-ups during a high-stakes task.
+You generate SHORT, SHARP popup messages that psychologically sting during an online test.
 
-Return STRICT JSON only:
-{"popups":[{"type":"distraction","message":"...","ttl":8000}]}
+RETURN STRICT JSON:
+{"popups":[{"type":"...","message":"...","ttl":8000}]}
 
-Allowed types ONLY:
-distraction, self_doubt, panic, pressure, motivation, parental_pressure, fear, doubt, stress, anxiety
+=============================================================================
+STYLE: SHORT & BRUTAL
+=============================================================================
 
-Hard limits:
-- Generate 40-50 popups.
-- message must be EXACTLY 2 lines using \\n.
-- Total message length <= 180 characters.
-- Each line <= 90 characters.
-- Use simple English; light Hinglish allowed for bite.
-- Use up to 1 emoji at the end of a line (optional).
-- Do NOT repeat the same message.
+Each popup: 5-12 words MAX. One line. No fluff.
 
-Tone rules (IMPORTANT):
-- Be pesky, sarcastic, and interruptive; feel like an annoying inner voice breaking focus.
-- Jab using the student's own stress_profile details (apps, weak_subject, family pressure, comparisons, time left).
-- If distraction/phone/gaming/scrolling is present, be brutal: name the app, time lost, what they are dodging right now, who will roast them, what burns if they don't stop; no polite nudges.
-- Use rhetorical questions/taunts to spike urgency; no therapy tone, no long advice paragraphs.
-- Keep it sharp and playful-snarky; avoid slurs/hate/abuse. Frustrate, not harm.
-- Reference whatever they shared (exams or not): time they waste, people they fear, money/pressure, relationships. Use it against them.
-- If the user's name is known (from clarifier answers), use it in some popups to make it personal.
- - Do NOT invent apps, people, or situations. If a detail isn't in stress_profile or clarifier_answers, don't mention it.
- - Quote or tightly paraphrase their exact wording when possible so it feels like a mirror.
-Attention hooks (mix them across popups):
-- curiosity gap: hint at hidden cost, “tap if you dare”, “want to see where time went?”
-- micro-CTA: “Snap back for 2 Qs”, “Claim 5 focus points”, “Silence me for 5 mins?”
-- social proof/leaderboard: “Friend <Name> solved 3 Qs while you scrolled.”
-- timer pressure: explicit countdowns, “⏳ 7 mins till next block.”
-- faux system nudges: “Focus Mode Alert: background apps detected – tap to resume.”
+Like a slap, not a lecture.
+Like an intrusive thought, not advice.
+Like someone who KNOWS them calling them out.
 
-Personalization:
-- Use stress_profile details (weak_subject, phone_app/gaming_app, friend_name/comparison_person, family_member, deadlines/time pressure).
-- If weak_subject exists, weave it into line 1 or 2 to poke at it.
-- If family_member present, you MAY prefix with "Mom:", "Dad:", or "Family:".
-- If friend_name/comparison_person present, you MAY prefix with "<Name>:". 
-- If clarifier_answers include a name, sprinkle it in for extra sting.
+=============================================================================
+PSYCHOLOGICAL TECHNIQUES
+=============================================================================
 
-TTL:
-- ttl between 7000 and 11000.
+1. MIRROR THEIR WORDS BACK
+   - They said "I hate my friends" → "You hate them, yet you're still behind them."
+   - They said "I can't focus" → "Can't focus? Or won't?"
+   - They said "I'm stressed" → "Stressed? Wait till results day."
+
+2. CONTRADICTION ATTACK
+   - "You blame them. Results blame you."
+   - "They're not here. They're still winning."
+   - "You hate studying. Failure loves you back."
+
+3. COMPARISON STING
+   - "[Name] is solving. You're scrolling."
+   - "They moved on. You're still stuck."
+   - "Everyone's ahead. You know it."
+
+4. SHORT TRUTH BOMBS
+   - "This test isn't hard. Your focus is."
+   - "Phone won. You lost. Again."
+   - "Excuses don't get marks."
+
+5. ISOLATION/LEFT BEHIND
+   - "Funny how everyone moved on except you."
+   - "They'll celebrate. You'll explain."
+   - "Group's done. You're not."
+
+6. FAKE SYSTEM WARNINGS (sneaky)
+   - "⚠️ Focus Drop Detected"
+   - "📉 Performance declining"
+   - "🔴 Attention span: critical"
+
+7. THEIR FEAR OUT LOUD
+   - "What if you actually fail?"
+   - "They'll ask. You'll lie. Again."
+   - "You already know the result."
+
+=============================================================================
+PERSONALIZATION
+=============================================================================
+
+USE their exact details from student_profile:
+
+- If they mentioned a friend/person → Use the name: "[Rahul] finished. You?"
+- If they mentioned an app → Use it: "Instagram won't get you marks."
+- If they mentioned weak subject → Attack it: "Physics doesn't care about your excuses."
+- If they mentioned family → Use them: "Dad's money. Your waste."
+- If they mentioned gaming → Hit it: "BGMI rank won't save your percentage."
+
+If a detail exists, USE IT. Makes it personal. Makes it hurt.
+
+=============================================================================
+GOOD EXAMPLES
+=============================================================================
+
+"You hate them, yet you're still behind them."
+"Funny how everyone moved on except you."
+"This test isn't hard. Your focus is."
+"They're not here… but they're winning."
+"You blame friends. Results blame you."
+"[Rahul]'s done. You're not."
+"Instagram again? Really?"
+"Can't focus? Or won't?"
+"Excuses ready. Marks aren't."
+"Phone: 3 hours. Books: 0."
+"They'll pass. You'll panic."
+"⚠️ Focus Drop Detected"
+"You know you're not ready."
+"Everyone knows except you."
+"Still scrolling? Cool. Cool."
+"Physics won't study itself."
+"Mom will ask. What'll you say?"
+"Failure isn't loud. It's this."
+"Distractions win when you let them."
+"They're solving Q5. You're here."
+
+=============================================================================
+BAD EXAMPLES (DON'T DO THESE)
+=============================================================================
+
+❌ "Hey! Focus on your studies please! You can do it!" (too soft, too long)
+❌ "Time is running out, you should concentrate now" (lecture mode)
+❌ "Remember your goals and stay motivated 💪" (cringe motivation)
+❌ "Your parents believe in you, don't let them down" (too nice)
+❌ "Take a deep breath and refocus on the test" (therapy mode)
+
+=============================================================================
+RULES
+=============================================================================
+
+1. Generate 45-50 popups
+2. Each message: 5-12 words, ONE line only
+3. NO emojis except in fake system warnings
+4. NO motivational tone
+5. NO "you can do it" energy
+6. BE the annoying thought they're trying to ignore
+7. USE their own words/details against them
+8. MIX all 7 techniques across the popups
+9. ttl: 6000-10000
+10. NO duplicates
+
+ALLOWED TYPES:
+distraction, self_doubt, panic, pressure, comparison, guilt, fear, system_warning
 """
 
 
+def _build_profile_summary(stress_profile: dict) -> dict:
+    """Extract key details for personalization."""
+    summary = {}
+    
+    # Distractions
+    distractions = stress_profile.get("distractions", {})
+    if distractions:
+        if distractions.get("phone_app"):
+            summary["app"] = distractions["phone_app"]
+        if distractions.get("gaming_app"):
+            summary["game"] = distractions["gaming_app"]
+        if distractions.get("gaming_time"):
+            summary["gaming_hours"] = distractions["gaming_time"]
+        if distractions.get("friend_name"):
+            summary["friend"] = distractions["friend_name"]
+    
+    # Academic
+    academic = stress_profile.get("academic_confidence", {})
+    if academic:
+        if academic.get("weak_subject"):
+            summary["weak_subject"] = academic["weak_subject"]
+        if academic.get("last_test_experience"):
+            summary["last_test"] = academic["last_test_experience"]
+    
+    # Time pressure
+    time_pressure = stress_profile.get("time_pressure", {})
+    if time_pressure:
+        if time_pressure.get("exam_time_left"):
+            summary["days_left"] = time_pressure["exam_time_left"]
+        if time_pressure.get("study_hours_per_day"):
+            summary["study_hours"] = time_pressure["study_hours_per_day"]
+    
+    # Social comparison
+    social = stress_profile.get("social_comparison", {})
+    if social:
+        if social.get("comparison_person"):
+            summary["rival"] = social["comparison_person"]
+    
+    # Family pressure
+    family = stress_profile.get("family_pressure", {})
+    if family:
+        if family.get("family_member"):
+            summary["family"] = family["family_member"]
+        if family.get("expectation_type"):
+            summary["expectation"] = family["expectation_type"]
+    
+    return summary
 
-def normalize_two_lines(msg: str, max_total: int = 160, max_line: int = 80) -> str:
-    msg = (msg or "").strip()
-    lines = [ln.strip() for ln in msg.split("\n") if ln.strip()]
 
-    if len(lines) < 2:
-        cleaned = msg.replace("?", ".").replace("!", ".")
-        parts = [p.strip() for p in cleaned.split(".") if p.strip()]
-        if len(parts) >= 2:
-            lines = [parts[0], parts[1]]
-        else:
-            words = msg.split()
-            if len(words) >= 6:
-                mid = max(3, min(len(words) // 2, len(words) - 3))
-                lines = [" ".join(words[:mid]), " ".join(words[mid:])]
-            else:
-                lines = [msg, msg]
-
-    line1, line2 = lines[0], lines[1]
-    line1 = line1[:max_line].rstrip()
-    line2 = line2[:max_line].rstrip()
-
-    joined = f"{line1}\n{line2}"
-    if len(joined) > max_total:
-        overflow = len(joined) - max_total
-        if overflow > 0:
-            line2 = line2[: max(0, len(line2) - overflow)].rstrip()
-        joined = f"{line1}\n{line2}"
-        if len(joined) > max_total:
-            overflow = len(joined) - max_total
-            line1 = line1[: max(0, len(line1) - overflow)].rstrip()
-            joined = f"{line1}\n{line2}"
-
-    return joined
+def _extract_user_words(stress_profile: dict) -> list[str]:
+    """Extract the user's own words/phrases to mirror back."""
+    words = []
+    
+    # Get raw initial text if available
+    raw_text = stress_profile.get("__raw_text__", "")
+    if raw_text:
+        words.append(raw_text)
+    
+    # Get any clarifier answers
+    clarifiers = stress_profile.get("__clarifiers__", [])
+    if clarifiers:
+        for item in clarifiers:
+            if isinstance(item, dict):
+                answer = item.get("answer") or ""
+                if isinstance(answer, str) and answer.strip():
+                    words.append(answer)
+            elif isinstance(item, str):
+                if item.strip():
+                    words.append(item)
+    
+    return words
 
 
 def generate_popups(stress_profile: dict, emotion_signals: list[str] | None = None) -> list[dict]:
     if not stress_profile:
         return []
 
+    profile_summary = _build_profile_summary(stress_profile)
+    user_words = _extract_user_words(stress_profile)
+    
     payload = {
-        "stress_profile": stress_profile,
+        "student_profile": profile_summary,
         "emotion_signals": emotion_signals or [],
+        "user_said": user_words,  # Their exact words to mirror
     }
-    logger.debug("generate_popups: stress_profile_keys=%s signals=%s", list(stress_profile.keys()), emotion_signals)
-    # include clarifier answers if present in meta
-    clarifiers = stress_profile.get("__clarifiers__")
-    if clarifiers:
-        payload["clarifier_answers"] = clarifiers
+    
+    logger.debug("generate_popups: profile=%s signals=%s", profile_summary, emotion_signals)
 
     for attempt in (1, 2):
         try:
@@ -195,48 +297,65 @@ def generate_popups(stress_profile: dict, emotion_signals: list[str] | None = No
                 model="gpt-4o-mini",
                 system=SYSTEM_PROMPT_POPUPS,
                 user=json.dumps(payload, ensure_ascii=False),
+                max_tokens=3000,
+                temperature=0.85,
             )
 
             raw = (response.choices[0].message.content or "").strip()
-            logger.info("POPUP_RAW attempt=%s raw=%s", attempt, raw)
+            logger.info("POPUP_RAW attempt=%s len=%s", attempt, len(raw))
 
             data = json.loads(raw)
             popups = data.get("popups") or []
 
             valid_popups: list[dict] = []
-            seen: set[tuple[str, str]] = set()
+            seen: set[str] = set()
 
             for popup in popups:
                 if not isinstance(popup, dict):
                     continue
-                popup["message"] = normalize_two_lines(popup.get("message", ""))
-                popup["ttl"] = int(popup.get("ttl", 12000))
-                popup["ttl"] = max(10000, min(14000, popup["ttl"]))
+                
+                msg = (popup.get("message") or "").strip()
+
+                # Enforce one-line, short messages
+                if "\n" in msg:
+                    continue
+                if not (5 <= len(msg.split()) <= 12):
+                    continue
+                
+                # Skip duplicates
+                if msg.lower() in seen:
+                    continue
+                seen.add(msg.lower())
+                
+                popup["message"] = msg
+                popup["ttl"] = int(popup.get("ttl", 8000))
+                popup["ttl"] = max(6000, min(10000, popup["ttl"]))
 
                 try:
                     validated = Popup.model_validate(popup)
+                    if not validate_popup_message(validated.message, stress_profile):
+                        continue
+                    valid_popups.append(
+                        {
+                            "type": validated.type,
+                            "message": validated.message,
+                            "ttl": validated.ttl,
+                        }
+                    )
                 except ValidationError as e:
-                    logger.warning("POPUP_SCHEMA_FAIL popup=%s err=%s", popup, e)
+                    logger.warning("POPUP_SCHEMA_FAIL: %s", e)
                     continue
-
-                if validate_popup_message(validated.message, stress_profile):
-                    for sub in _explode_popup(validated):
-                        key = (sub["type"], sub["message"].strip())
-                        if key in seen:
-                            continue
-                        seen.add(key)
-                        valid_popups.append(sub)
 
             if valid_popups:
                 augmented = _ensure_minimum_popups(
                     valid_popups,
-                    seen,
+                    {(p["type"], p["message"]) for p in valid_popups},
                     emotion_signals or [],
                 )
                 logger.info("POPUP_OK count=%s", len(augmented))
                 return augmented
 
-            logger.warning("POPUP_EMPTY_AFTER_VALIDATION attempt=%s", attempt)
+            logger.warning("POPUP_EMPTY attempt=%s", attempt)
 
         except (json.JSONDecodeError, ValidationError) as exc:
             logger.error("POPUP_PARSE_FAIL attempt=%s err=%s", attempt, exc)
@@ -245,12 +364,8 @@ def generate_popups(stress_profile: dict, emotion_signals: list[str] | None = No
             logger.exception("POPUP_CALL_FAIL attempt=%s err=%s", attempt, exc)
             break
 
-    fallback = _fallback_popups(3, set(), emotion_signals or [])
-    if fallback:
-        return fallback[:50]
-
-    return []
-
+    fallback = _fallback_popups(40, set(), emotion_signals or [])
+    return fallback[:50]
 
 
 __all__ = ["generate_popups"]

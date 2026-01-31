@@ -260,7 +260,7 @@ def generate_question(
     user_text = context.get("user_text") or ""
 
     # Build prompt for slot-specific question
-    system = SYSTEM_PROMPT_SLOT_QUESTION.format(domain=domain, slot=slot)
+    system = SYSTEM_PROMPT_SLOT_QUESTION.replace("{domain}", str(domain)).replace("{slot}", str(slot))
 
     payload = {
         "user_statement": user_text[:1200],

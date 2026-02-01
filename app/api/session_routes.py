@@ -458,6 +458,25 @@ def debug_session(session_id: str):
     )
 
 
+@bp.post("/<session_id>/complete")
+def complete_session_early(session_id: str):
+    """Mark session as completed early when user skips remaining questions."""
+    session = get_session(session_id)
+    if not session:
+        return jsonify({"error": "session not found"}), 404
+
+    if session.status == "completed":
+        return jsonify(
+            {
+                "ok": True,
+                "already_completed": True,
+                "popups_count": len(session.popups or []),
+            }
+        )
+
+    return _complete_session(session)
+
+
 @bp.post("/<session_id>/start-simulation")
 def start_simulation(session_id: str):
     session = get_session(session_id)

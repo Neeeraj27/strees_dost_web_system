@@ -32,4 +32,20 @@ def chat_json(model: str, system: str, user: str, **kwargs):
     return client.chat.completions.create(**options)
 
 
-__all__ = ["chat_text", "chat_json"]
+def transcribe_audio(file_storage, model: str = "gpt-4o-mini-transcribe") -> str:
+    """Transcribe an uploaded audio file and return plain text."""
+    filename = getattr(file_storage, "filename", None) or "recording.webm"
+    media_type = getattr(file_storage, "mimetype", None) or "audio/webm"
+    payload = file_storage.read()
+    result = client.audio.transcriptions.create(
+        model=model,
+        file=(filename, payload, media_type),
+        response_format="text",
+    )
+    if isinstance(result, str):
+        return result.strip()
+    text = getattr(result, "text", "") or ""
+    return text.strip()
+
+
+__all__ = ["chat_text", "chat_json", "transcribe_audio"]

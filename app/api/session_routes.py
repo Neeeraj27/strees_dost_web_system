@@ -12,6 +12,7 @@ from ..services.combo_question_generator import generate_combo_question
 from ..services.combo_specs import COMBO_SPECS
 from ..services.fallbacks import CLARIFIER_QUESTION
 from ..services.gpt_client import detect_causes, extract_components
+from ..services.openai_client import transcribe_audio
 from ..services.planner import (
     activate_domains_from_causes,
     pick_next_slot,
@@ -34,6 +35,24 @@ from ..services.relevance import combo_relevant, domain_relevant
 from ..services.stop_engine import should_stop
 
 bp = Blueprint("session", __name__, url_prefix="/session")
+
+
+@bp.post("/transcribe")
+def transcribe_session_audio():
+    try:
+        audio = request.files.get("audio")
+        if not audio:
+            return jsonify({"error": "audio file is required"}), 400
+
+        transcript = transcribe_audio(audio)
+        current_app.logger.info("transcribe_session_audio: transcript len=%s", len(transcript))
+        if not transcript:
+            return jsonify({"error": "could not transcribe audio"}), 400
+
+        return jsonify({"text": transcript})
+    except Exception as exc:  # pragma: no cover - defensive logging
+        current_app.logger.exception("transcribe_session_audio failed: %s", exc)
+        return jsonify({"error": "transcription failed", "detail": str(exc)}), 500
 
 
 @bp.post("/start")

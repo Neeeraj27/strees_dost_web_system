@@ -27,6 +27,7 @@ const hudToggle = $("hudToggle");
 const btnCloseHud = $("btnCloseHud");
 
 const btnStart = $("btnStart");
+const btnRecord = $("btnRecord");
 const btnAnswer = $("btnAnswer");
 const btnReset = $("btnReset");
 const btnRestart = $("btnRestart");
@@ -55,6 +56,11 @@ let currentDomain = null;
 let currentSlot = null;
 let socket = null;
 let socketInitialized = false;
+let mediaRecorder = null;
+let mediaStream = null;
+let audioChunks = [];
+let recordedAudioBlob = null;
+let recordingMimeType = "audio/webm";
 let testQuestions = [];
 let testQuestionIndex = 0;
 let selectedOptions = {};
@@ -91,6 +97,16 @@ async function postJSON(url, body) {
   return data;
 }
 
+async function postFormData(url, formData) {
+  const res = await fetch(url, {
+    method: "POST",
+    body: formData,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || data.message || `HTTP ${res.status}`);
+  return data;
+}
+
 function showStage(name, message) {
   Object.values(stageEls).forEach((el) => el?.classList.remove("active"));
   const stage = stageEls[name];
@@ -119,6 +135,19 @@ function setIntroHint(text) {
     stageEls.intro?.classList.add("shake");
     setTimeout(() => stageEls.intro?.classList.remove("shake"), 400);
   }
+}
+
+function setRecordButtonState() {
+  if (!btnRecord) return;
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    btnRecord.textContent = "Stop Recording";
+    btnRecord.classList.remove("ghost");
+    btnRecord.classList.add("primary");
+    return;
+  }
+  btnRecord.textContent = recordedAudioBlob ? "Re-record Voice" : "Record Voice";
+  btnRecord.classList.remove("primary");
+  btnRecord.classList.add("ghost");
 }
 
 function setSessionUI(id, domains) {
@@ -156,6 +185,18 @@ function resetFlow() {
   btnAnswer.disabled = true;
   answerInput.value = "";
   $("initialText").value = "";
+  recordedAudioBlob = null;
+  recordingMimeType = "audio/webm";
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    mediaRecorder.stop();
+  }
+  if (mediaStream) {
+    mediaStream.getTracks().forEach((track) => track.stop());
+    mediaStream = null;
+  }
+  mediaRecorder = null;
+  audioChunks = [];
+  setRecordButtonState();
   setHint("");
   setIntroHint("");
   // Reset test question panel
@@ -177,6 +218,76 @@ function resetFlow() {
   log("reset_flow");
   setSessionUI(null, null);
   showStage("intro");
+}
+
+async function startRecording() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    setIntroHint("Your browser does not support mic recording.");
+    return;
+  }
+  mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  audioChunks = [];
+  recordedAudioBlob = null;
+  const preferredMime =
+    typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("audio/webm")
+      ? "audio/webm"
+      : "";
+  mediaRecorder = preferredMime
+    ? new MediaRecorder(mediaStream, { mimeType: preferredMime })
+    : new MediaRecorder(mediaStream);
+  recordingMimeType = mediaRecorder.mimeType || preferredMime || "audio/webm";
+
+  mediaRecorder.addEventListener("dataavailable", (event) => {
+    if (event.data && event.data.size > 0) {
+      audioChunks.push(event.data);
+    }
+  });
+
+  mediaRecorder.addEventListener("stop", () => {
+    recordedAudioBlob = audioChunks.length
+      ? new Blob(audioChunks, { type: recordingMimeType })
+      : null;
+    if (mediaStream) {
+      mediaStream.getTracks().forEach((track) => track.stop());
+      mediaStream = null;
+    }
+    setRecordButtonState();
+    if (recordedAudioBlob) {
+      setIntroHint("Voice captured. Click Launch Session to transcribe and continue.");
+    }
+  });
+
+  mediaRecorder.start();
+  setIntroHint("Recording... click again to stop.");
+  setRecordButtonState();
+}
+
+function stopRecording() {
+  if (!mediaRecorder || mediaRecorder.state !== "recording") return;
+  mediaRecorder.stop();
+}
+
+function getAudioExtension() {
+  if (recordingMimeType.includes("mp4") || recordingMimeType.includes("mpeg")) return "m4a";
+  if (recordingMimeType.includes("ogg")) return "ogg";
+  if (recordingMimeType.includes("wav")) return "wav";
+  return "webm";
+}
+
+async function resolveInitialText() {
+  const typed = $("initialText").value.trim();
+  if (typed) return typed;
+  if (!recordedAudioBlob) return "";
+
+  setLoadingMessage("Transcribing your recording...");
+  const formData = new FormData();
+  formData.append("audio", recordedAudioBlob, `recording.${getAudioExtension()}`);
+  const data = await postFormData("/session/transcribe", formData);
+  const text = (data.text || "").trim();
+  if (text) {
+    $("initialText").value = text;
+  }
+  return text;
 }
 
 function clearMutationTimers() {
@@ -565,13 +676,20 @@ function submitCurrentQuestion() {
 // Flow ---------------------------------------------------------------------
 async function startSessionFlow() {
   try {
-    const text = $("initialText").value.trim();
+    if (mediaRecorder && mediaRecorder.state === "recording") {
+      setIntroHint("Stop the recording first.");
+      return;
+    }
+
+    btnStart.disabled = true;
+    showStage("loading", recordedAudioBlob ? "Transcribing your recording..." : "Absorbing your story...");
+    const text = await resolveInitialText();
     if (!text) {
       setIntroHint("Please share a few thoughts first.");
+      showStage("intro");
       return;
     }
     setIntroHint("");
-    btnStart.disabled = true;
     showStage("loading", "Absorbing your story…");
 
     const data = await postJSON("/session/start", { text });
@@ -685,6 +803,18 @@ btnCloseHud?.addEventListener("click", () => toggleHud(false));
 
 // Events -------------------------------------------------------------------
 btnStart?.addEventListener("click", startSessionFlow);
+btnRecord?.addEventListener("click", async () => {
+  try {
+    if (mediaRecorder && mediaRecorder.state === "recording") {
+      stopRecording();
+      return;
+    }
+    await startRecording();
+  } catch (err) {
+    setIntroHint(err.message || "Mic access failed.");
+    setRecordButtonState();
+  }
+});
 btnAnswer?.addEventListener("click", submitAnswer);
 btnRestart?.addEventListener("click", resetFlow);
 btnReset?.addEventListener("click", resetFlow);
@@ -792,6 +922,7 @@ answerInput?.addEventListener("keydown", (evt) => {
 // Init ---------------------------------------------------------------------
 resetFlow();
 initSocket();
+setRecordButtonState();
 
 // expose for console debugging
 window.__stressApp = {

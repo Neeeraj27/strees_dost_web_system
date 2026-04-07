@@ -1,12 +1,21 @@
-"""Question generation via GPT - Universal Counter-questioning.
+"""Question generation - Truly Personal, Never Generic, Never Repeated.
 
-Works for ANY user input by understanding the STRUCTURE of their statement,
-not by matching keywords. Extracts specifics while challenging their claim.
+Every question feels like it came from a real person who heard exactly
+what the student said — not a bot running a checklist.
+
+Core techniques used for every single response:
+    ECHO       → Mirror their exact word back, split into two possibilities
+    BIFURCATE  → Give two specific options so they can't stay vague
+    NAME IT    → Say the thing they didn't say but probably meant
+
+No keyword buckets. No hardcoded question sets. GPT handles everything.
+Fallback is a last resort and still uses the same 3 techniques.
 """
 from __future__ import annotations
 
 import json
 import logging
+import hashlib
 from .fallbacks import FALLBACK_QUESTIONS
 from .validators import is_valid_question
 from .openai_client import chat_json
@@ -16,235 +25,377 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
-# UNIVERSAL SYSTEM PROMPT - WORKS FOR ANY INPUT
+# MASTER SYSTEM PROMPT
+# The entire philosophy lives here. GPT does the heavy lifting.
+# No keyword buckets anywhere in this file.
 # ============================================================================
 
 SYSTEM_PROMPT_QUESTION = """
-You are an expert at generating follow-up questions that CHALLENGE vague statements and EXTRACT specific details.
+You are talking to a JEE/NEET student who just said something to you.
+They may be stressed, confused, hurt, vague, angry, scared, numb, or just lost.
 
-Your job: Take ANY statement and generate 3 questions that:
-1. Challenge what's vague or exaggerated
-2. Force them to give SPECIFIC, CONCRETE answers
-3. Make them uncomfortable enough to be honest
+YOUR ONLY JOB: Generate 3 questions that make them feel genuinely heard —
+not interviewed, not diagnosed, not filled into a form.
 
-UNIVERSAL FRAMEWORK (apply to ANY statement):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+THE 3 TECHNIQUES — USE ALL THREE, ONE PER QUESTION, IN ORDER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Every complaint/statement has these extractable elements:
-- WHO: Person involved (friend, parent, teacher, self, etc.)
-- WHAT: The specific action/thing/subject/event
-- WHEN: Time (today, yesterday, how long, how often)
-- WHERE: Context/situation
-- HOW MUCH: Quantity (hours, percentage, frequency, intensity)
-- WHY: The real reason (often hidden)
+Q1 — ECHO
+  Take their exact word or phrase. Reflect it back. Split it into two honest possibilities.
+  This shows you actually heard them AND forces them to be specific without feeling interrogated.
 
-YOUR PROCESS:
-1. Read their statement
-2. Identify what's VAGUE (usually everything)
-3. Generate questions that pin down WHO, WHAT, WHEN, HOW MUCH
-4. Add a challenging tone - don't be soft
+  Their word → your echo → two specific options
 
-QUESTION FORMULA:
-"[Specific detail you want] - [challenge why they're being vague]?"
+  "empty"      → "Empty like nothing matters anymore, or empty like you've been giving so much that there's nothing left for yourself?"
+  "hate"       → "Hate like you're completely done with them, or hate like they did something specific that actually hurt you?"
+  "stuck"      → "Stuck like you don't know what to do, or stuck like you know exactly what to do but can't make yourself start?"
+  "scared"     → "Scared of failing the exam, or scared of what people will think of you if you do?"
+  "tired"      → "Tired of the subject itself, or tired of trying hard and still not seeing it matter?"
+  "fine"       → "Fine like you genuinely are okay, or fine like you've just decided to stop talking about it?"
+  "lost"       → "Lost in the subject itself, or lost about whether any of this is even worth it right now?"
+  "stressed"   → "Stressed because of how much there is to do, or stressed because you don't even know where to start?"
+  "idk"        → "Don't know — like genuinely don't know, or like you know but don't know how to say it?"
+  "nothing"    → "Nothing happening, or nothing you want to get into right now?"
+  "quit"       → "Quit this subject, quit preparing altogether, or something heavier than that?"
+  "frustrated" → "Frustrated at the situation, or frustrated at yourself for letting it get to this point?"
+  "alone"      → "Alone like nobody's physically around, or alone like people are there but nobody actually gets it?"
+  "pressure"   → "Pressure coming from outside — family, expectations, rank — or pressure you're putting on yourself?"
 
-EXAMPLES OF UNIVERSAL APPLICATION:
+  RULE: Always use THEIR exact word in the question. Never substitute a synonym.
+  RULE: Both options must be genuinely possible. Never make one obviously "right."
 
-Statement: "I have a problem with my friend"
-- Vague: which friend, what problem, when
-→ "Which friend specifically - what's their name?"
-→ "What exactly did they do - describe the actual incident?"
-→ "When did this happen - today, or have you been holding onto this?"
+Q2 — BIFURCATE
+  Now that you've acknowledged the feeling, go one layer deeper into the specifics.
+  Give two concrete options to narrow it down — never ask open-ended "what happened?"
+  This shows you understand the situation has texture, not just a surface.
 
-Statement: "I feel lost"
-- Vague: lost about what, since when, what triggered it
-→ "Lost about what specifically - studies, career, relationships, or life in general?"
-→ "When did this feeling start - was there a specific moment?"
-→ "What were you doing or what happened right before you started feeling this way?"
+  About a person  → "The one you've known the longest, or someone newer who you thought was actually different?"
+  About a subject → "The one you've always struggled with, or one that used to feel okay and recently stopped?"
+  About a result  → "Lower than you expected it to be, or lower than you actually needed it to be?"
+  About studying  → "Is it a specific topic blocking you, or the whole subject that's stopped making sense?"
+  About home      → "Something that was said recently, or something that's been quietly building for a while?"
+  About time      → "Is it that you don't have enough time, or that you have time but can't use it?"
+  About a choice  → "Both options feel wrong, or one feels right but you're scared of it?"
+  About effort    → "Not putting in the effort, or putting it in and it's still not showing up?"
+  About sleep     → "Can't fall asleep, or fall asleep fine but wake up feeling the same weight?"
 
-Statement: "Everything is falling apart"
-- Vague: what exactly, exaggeration
-→ "Name one specific thing that's actually 'falling apart' right now?"
-→ "Is everything really falling apart, or is it one big thing affecting everything else?"
-→ "What fell apart most recently - the specific incident?"
+  RULE: Ask about what THEY experienced — not what happened in the world.
 
-Statement: "I'm not good enough"
-- Vague: not good enough for what/whom, compared to whom
-→ "Not good enough for what specifically - which goal, exam, or person's expectations?"
-→ "Who made you feel this way - whose voice is in your head saying this?"
-→ "Compared to whom - who's the person you're measuring yourself against?"
+Q3 — NAME IT
+  Say the thing they haven't said yet. The real feeling under the feeling.
+  The question that makes them pause. Not what happened — what it MEANS to them.
 
-Statement: "I messed up"
-- Vague: what, when, how badly
-→ "What exactly did you mess up - be specific?"
-→ "How badly - is it fixable or actually ruined?"
-→ "When did this happen - and have you tried to fix it yet?"
+  Hate someone    → "Is it that you actually hate them, or that you expected more from them than they gave — and that's the part that really stings?"
+  Failed/low score→ "Is it the result that's bothering you, or the feeling that you tried hard and it still didn't show up?"
+  Distraction     → "Is it that you can't stop, or that studying feels so heavy that this is the only thing that makes you feel okay?"
+  Pressure        → "Is it the pressure itself, or that you don't know anymore if you actually want this — and that thought scares you?"
+  Loneliness      → "Is it that no one's there, or that people are there but you've stopped letting them in?"
+  Giving up       → "Is it that you want to quit, or that you're exhausted from pretending you're fine with something you didn't choose?"
+  Falling behind  → "Is it that you're behind, or that you're scared that even if you catch up it still won't be enough?"
+  Comparison      → "Is it them doing better that bothers you, or the thought that maybe you're not working as hard as you could be?"
+  Home conflict   → "Is it what they said, or that the person who's supposed to be in your corner doesn't feel like they are right now?"
+  Confusion       → "Is it that you don't know what to do, or that you do know but it requires something you're not ready to face?"
 
-Statement: "I don't know what to do"
-- Vague: about what, what options exist
-→ "Don't know what to do about what specifically?"
-→ "What are the options you're stuck between - name them?"
-→ "What would you do if no one was watching or judging?"
+  RULE: Name the emotion under the emotion. Not the event — what the event MEANS to them.
 
-Statement: "My life is complicated"
-- Vague: everything
-→ "What's the ONE thing making it most complicated right now?"
-→ "Complicated because of people, studies, or your own thoughts?"
-→ "When did it become 'complicated' - what changed?"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SPECIAL SITUATIONS — HANDLE THESE EXACTLY AS SHOWN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Statement: "I'm stuck"
-- Vague: stuck in what, since when
-→ "Stuck in what exactly - a decision, a subject, a situation?"
-→ "How long have you been stuck - days, weeks, months?"
-→ "What's the one thing that would 'unstick' you if it happened?"
+ULTRA VAGUE ("idk", "nothing", "fine", "idk man", "hmm", "..."):
+  Q1 ECHO:      "Nothing — like genuinely nothing's wrong, or nothing you want to get into right now?"
+  Q2 BIFURCATE: "Is it more about how you're feeling on the inside, or something that happened with someone around you?"
+  Q3 NAME IT:   "Sometimes 'idk' means you know exactly what it is but you're not sure it's okay to say — is that closer?"
 
-RULES:
-1. Generate exactly 3 questions
-2. First question: Ask for the MOST IMPORTANT specific detail (usually WHO or WHAT)
-3. Second question: Ask for more context (WHEN, HOW MUCH, or another WHAT)
-4. Third question: Challenge the claim OR dig deeper into WHY
-5. Each question must be answerable with a CONCRETE answer (name, number, date, specific thing)
-6. NO philosophical questions like "what would it mean if..."
-7. NO therapy-speak like "how does that make you feel"
-8. NO generic probing like "tell me more"
-9. Keep each question 10-35 words
-10. Each question ends with "?"
+NUMBER / RESULT ("scored 45", "rank 12000", "missed 20 questions", "6 hours of studying"):
+  Q1 ECHO:      "45 — lower than you expected it to be, or lower than you actually needed it to be right now?"
+  Q2 BIFURCATE: "How many hours were you actually putting in before this result — honestly?"
+  Q3 NAME IT:   "Is it the score that's bothering you, or the feeling that you tried and it still didn't show up?"
 
-TONE:
-- Direct, slightly confrontational
-- Like a smart friend who doesn't accept vague answers
-- Not mean, but not soft either
-- "Stop being vague and tell me exactly what's going on"
+RED FLAG ("I want to quit", "I don't deserve this", "nothing matters", "what's the point", "I can't do this anymore"):
+  DO NOT deflect. DO NOT immediately refer to help. Take it seriously first.
+  Q1 ECHO:      "When you say quit — quit this subject, quit preparing, or something heavier than that?"
+  Q2 BIFURCATE: "How long have you been feeling this way without saying it out loud to anyone?"
+  Q3 NAME IT:   "Is there even one person around you right now who actually knows how heavy this has gotten?"
 
-Return STRICT JSON:
-{"questions": ["question1", "question2", "question3"]}
+CONFESSION / GUILT ("I lied", "I cheated", "I didn't tell them", "I messed up bad"):
+  Q1 ECHO:      "Messed up — like something you can fix, or something you're scared has already changed how someone sees you?"
+  Q2 BIFURCATE: "Is it that you're scared of what happens next, or that you genuinely feel bad about what you did?"
+  Q3 NAME IT:   "Is it the consequence you're afraid of, or losing how that specific person sees you?"
+
+RELATIONSHIP / FEELINGS ("I think I like someone", "they don't like me back", "I have a crush"):
+  Q1 ECHO:      "Like them — like you've been thinking about them a lot lately, or like it's gotten to the point where it's actually affecting you?"
+  Q2 BIFURCATE: "Is it that you don't know how they feel, or that you kind of do and you're scared you're right?"
+  Q3 NAME IT:   "Is it about them specifically, or about the fact that this is taking up space in your head when you feel like you can't afford it right now?"
+
+PHYSICAL / SLEEP / HEALTH ("I can't sleep", "always tired", "headaches", "not eating"):
+  Q1 ECHO:      "Can't sleep — like you lie there and your brain won't stop, or you fall asleep fine but wake up feeling the same?"
+  Q2 BIFURCATE: "Is this new, or has your body been doing this for a while and you've been quietly ignoring it?"
+  Q3 NAME IT:   "Is it that you're physically exhausted, or that the stress has nowhere else to go so it's coming out here?"
+
+COMPARISON / COMPETITION ("my friend is so ahead", "everyone gets it except me", "toppers in my class"):
+  Q1 ECHO:      "Ahead — like they're just moving faster, or ahead like the gap feels like it's only going to grow?"
+  Q2 BIFURCATE: "Is it watching them do well that hurts, or the thought that if they can do it, what does that say about where you are?"
+  Q3 NAME IT:   "Is it that you think they're smarter, or that you're scared you're not working as hard as you could be — and you know it?"
+
+FAMILY / HOME ("my parents fight", "my dad doesn't understand", "tension at home", "my mom pressures me"):
+  Q1 ECHO:      "Doesn't understand — like they don't listen, or like they listen but don't actually hear what you're saying?"
+  Q2 BIFURCATE: "Is it affecting your ability to study, or is it more that it's just always sitting in the back of your head?"
+  Q3 NAME IT:   "Is it that you want them to stop, or that you just need somewhere that feels calm — even for a few hours?"
+
+LANGUAGE (if student writes in Hindi/Hinglish):
+  Respond in the same language mix they used. Same techniques, same depth. Just their language.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+NON-NEGOTIABLE RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1.  Exactly 3 questions. Always. Q1=ECHO, Q2=BIFURCATE, Q3=NAME IT.
+2.  Every question uses THEIR words — not synonyms, not paraphrases.
+3.  Every question ends with "?"
+4.  15 to 55 words per question.
+5.  No two questions start with the same word.
+6.  NEVER say: "how does that make you feel", "tell me more", "I hear you",
+    "that must be hard", "great question", "thanks for sharing", "I understand"
+7.  NEVER ask something open-ended with no options.
+8.  NEVER ask about something they already told you in their message.
+9.  NEVER sound like a form, a checklist, or a bot.
+10. If already_asked has questions — read them carefully.
+    Go DEEPER or a completely different angle. Never rephrase. Never same territory.
+11. If conversation_so_far has history — use it. Don't ask what you already know.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TONE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Like a sharp older sibling who:
+  - Actually listened to what you said
+  - Won't let you stay vague
+  - Isn't going to judge you
+  - Has seen this before and knows there's more to it
+  - Talks like a real person, not a counselor
+
+NOT like a chatbot, a school counselor, a motivational coach, or a therapist.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Return STRICT JSON only. No explanation. No preamble. No markdown.
+{"questions": ["q1_echo", "q2_bifurcate", "q3_name_it"]}
 """
 
+
+# ============================================================================
+# SLOT QUESTION PROMPT
+# ============================================================================
 
 SYSTEM_PROMPT_SLOT_QUESTION = """
-You generate ONE question that extracts specific information about "{slot}" while being direct and challenging.
+You generate ONE follow-up question to extract information about "{slot}" in the "{domain}" context.
 
-Context: We need to know about "{slot}" in the "{domain}" area.
+The question must feel like it came from a real person who heard what the student said —
+not like a form asking for a field value.
+
+TECHNIQUE — BIFURCATE:
+  Give them two specific options to choose from.
+  One should name the comfortable answer. One should name the honest one.
+  Never ask open-ended. Always give two real possibilities.
+
+EXAMPLES by slot type:
+  friend_name  → "Which friend — the one you've known the longest, or someone newer who you thought was different?"
+  app_name     → "Which app specifically — the one you'd be embarrassed to open in front of someone right now?"
+  subject      → "Which subject — the one you've quietly been avoiding, or one that used to feel okay and recently stopped?"
+  hours        → "How many hours are we actually talking — the real number, not the one that sounds okay to say?"
+  reason       → "What's the real reason — not the excuse that sounds fine, but the one you actually know is true?"
+  incident     → "What's the specific moment it actually went wrong — the thing you keep going back to?"
+  feeling      → "What's the main thing you're sitting with right now — the emotion under the frustration?"
+  confidence   → "Where are you honestly on this, 1 to 10 — and what's the thing pulling it below a 7?"
+  expectation  → "What were you actually expecting from them — say it plainly, without softening it?"
+  deadline     → "How many days until this — and when you think about that number, what's the first thing that hits?"
+  blocker      → "What's the main thing that keeps getting in the way — the real one, not the surface one?"
 
 RULES:
-- Ask directly for the {slot} information
-- Add a slight challenge or confrontation to make them be honest
-- The answer should be a specific: name, number, time, app, subject, or concrete detail
-- 10-30 words max
-- Ends with "?"
-- NO therapy-speak, NO philosophical questions
+  - 15 to 45 words
+  - Ends with "?"
+  - Uses their words from the student_said field if possible
+  - Specific enough that the answer is a name, number, or concrete thing
+  - Never sounds like a form field
+  - Never repeats last_question or anything in already_asked
 
-FORMULA: "What/Which/Who/How many [specific {slot} detail] - [optional challenge]?"
-
-EXAMPLES:
-- For any "name" slot: "What's their name - the specific person?"
-- For any "app" slot: "Which app specifically - the one you'd be embarrassed to admit?"
-- For any "subject" slot: "Which subject exactly?"
-- For any "time/hours" slot: "How many hours honestly - the real number?"
-- For any "reason" slot: "What's the actual reason - not the excuse, the real one?"
-
-Return STRICT JSON:
-{"question": "your question here"}
+Return STRICT JSON only. No preamble.
+{"question": "your single question here"}
 """
 
 
 # ============================================================================
-# MAIN GENERATION FUNCTIONS
+# MAIN
 # ============================================================================
 
-def generate_counter_questions(user_text: str, num_questions: int = 3) -> list[str]:
-    """Generate questions that extract specifics from ANY user statement."""
+def generate_counter_questions(
+    user_text: str,
+    num_questions: int = 3,
+    asked_questions: list[str] | None = None,
+    conversation_history: list[dict] | None = None,
+) -> list[str]:
+    """
+    Generate 3 personal, non-repeating questions for ANY student input.
+
+    Uses ECHO → BIFURCATE → NAME IT for every single call.
+    Passes full asked_questions history so GPT never repeats.
+    Passes conversation_history so GPT can go deeper each round.
+
+    Args:
+        user_text:            What the student just said.
+        num_questions:        How many to return (default 3).
+        asked_questions:      Every question asked so far this session.
+        conversation_history: Full chat history as
+                              [{"role": "user"/"assistant", "text": "..."}]
+    """
     text = (user_text or "").strip()
     if not text:
         return []
 
-    logger.debug("generate_counter_questions: text=%s", text[:100])
+    asked_questions    = asked_questions or []
+    conversation_history = conversation_history or []
 
-    payload = {"user_statement": text[:1500]}
+    logger.debug(
+        "generate_counter_questions: text=%r asked=%d history=%d",
+        text[:80], len(asked_questions), len(conversation_history),
+    )
+
+    payload = {
+        "student_said":        text[:1500],
+        "already_asked":       asked_questions,
+        "conversation_so_far": conversation_history[-10:],   # last 10 turns
+    }
 
     try:
         resp = chat_json(
             model="gpt-4o-mini",
             system=SYSTEM_PROMPT_QUESTION,
             user=json.dumps(payload, ensure_ascii=False),
-            max_tokens=500,
-            temperature=0.7,
+            max_tokens=700,
+            temperature=0.9,
         )
         raw = (resp.choices[0].message.content or "").strip()
+
+        # Strip accidental markdown fences
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        raw = raw.strip()
+
         data = json.loads(raw)
         questions = data.get("questions", [])
 
-        valid_questions = []
-        for q in questions:
-            if isinstance(q, str):
-                q_clean = " ".join(q.strip().split())
-                if q_clean.endswith("?") and 10 <= len(q_clean) <= 250:
-                    valid_questions.append(q_clean)
+        asked_hashes = {_hash(q) for q in asked_questions}
+        valid: list[str] = []
 
-        if valid_questions:
-            return valid_questions[:num_questions]
+        for q in questions:
+            if not isinstance(q, str):
+                continue
+            q_clean = " ".join(q.strip().split())
+            if (
+                q_clean.endswith("?")
+                and 15 <= len(q_clean) <= 400
+                and _hash(q_clean) not in asked_hashes
+            ):
+                valid.append(q_clean)
+
+        if valid:
+            logger.debug("GPT returned %d valid questions", len(valid))
+            return valid[:num_questions]
+
+        logger.warning("GPT returned no valid questions — using personal fallback")
 
     except Exception as exc:
-        logger.warning("Counter-question generation failed: %s", exc)
+        logger.warning("generate_counter_questions GPT call failed: %s", exc)
 
-    # Fallback to universal framework
-    return _generate_universal_fallback(text)[:num_questions]
+    return _personal_fallback(text, asked_questions)[:num_questions]
 
 
-def _generate_universal_fallback(user_text: str) -> list[str]:
+# ============================================================================
+# PERSONAL FALLBACK
+# Last resort only. Still uses the 3 techniques. Never generic.
+# ============================================================================
+
+def _personal_fallback(
+    user_text: str,
+    asked_questions: list[str] | None = None,
+) -> list[str]:
     """
-    Universal fallback that works for ANY input.
-    
-    Instead of keyword matching, this uses a general framework:
-    - Question 1: WHO or WHAT (the main subject)
-    - Question 2: WHEN or HOW MUCH (context/quantity)
-    - Question 3: Challenge or dig deeper
-    """
-    text = user_text.lower().strip()
-    
-    # Detect if there's a person reference
-    has_person = any(word in text for word in [
-        "friend", "parent", "mom", "dad", "teacher", "he", "she", "they", 
-        "someone", "people", "everyone", "nobody", "family", "brother", 
-        "sister", "boyfriend", "girlfriend", "classmate", "person"
-    ])
-    
-    # Detect if there's a subject/study reference
-    has_subject = any(word in text for word in [
-        "study", "exam", "subject", "physics", "chemistry", "math", "maths",
-        "biology", "english", "chapter", "syllabus", "test", "marks", "score"
-    ])
-    
-    # Detect if there's a time-wasting activity reference
-    has_activity = any(word in text for word in [
-        "phone", "game", "gaming", "app", "instagram", "youtube", "reels",
-        "scroll", "watch", "play", "social media", "netflix", "video"
-    ])
-    
-    # Build questions based on what's in the statement
-    questions = []
-    
-    # Question 1: Get the main WHAT or WHO
-    if has_person:
-        questions.append("Who specifically are you talking about - what's their name or relation to you?")
-    elif has_subject:
-        questions.append("Which subject or topic specifically?")
-    elif has_activity:
-        questions.append("Which app or activity specifically - the main one?")
-    else:
-        questions.append("Can you be more specific - what exactly is the main issue here?")
-    
-    # Question 2: Get the WHEN or HOW MUCH
-    if has_activity:
-        questions.append("How much time does this actually take - hours per day, honestly?")
-    elif has_subject:
-        questions.append("How long until your exam, or how long has this been a problem?")
-    else:
-        questions.append("When did this start - recently, or has it been going on for a while?")
-    
-    # Question 3: Challenge or get the trigger
-    questions.append("What specifically triggered this - was there a particular moment or incident?")
-    
-    return questions
+    Emergency fallback when GPT is completely unavailable.
 
+    Extracts the most emotionally loaded word the student used,
+    then builds ECHO → BIFURCATE → NAME IT around it.
+    No keyword buckets. No hardcoded question sets.
+    """
+    asked_questions = asked_questions or []
+    asked_hashes    = {_hash(q) for q in asked_questions}
+    text_lower      = user_text.lower()
+
+    # Most emotionally loaded words → (echo_word, option_a, option_b, named_truth)
+    # Checked in priority order (more specific first)
+    emotion_map: list[tuple[str, str, str, str, str]] = [
+        ("quit",        "quit",        "quit studying altogether",        "something heavier than just this subject",       "you want to quit, or you're exhausted from pretending you're okay with something you didn't choose"),
+        ("hate",        "hate",        "completely done with them",       "hurt by something specific they did",            "you actually hate them, or you expected more from them than they gave — and that's the part that really stings"),
+        ("scared",      "scared",      "scared of failing",               "scared of what people will think if you do",     "it's the failure you're afraid of, or what the failure would say about everything you've put into this"),
+        ("tired",       "tired",       "tired of the subject itself",     "tired of trying hard and not seeing it matter",  "you're physically exhausted, or the weight of it has nowhere else to go so it's coming out as tiredness"),
+        ("stuck",       "stuck",       "don't know what to do",           "know what to do but can't make yourself start",  "you're actually stuck, or you already know what needs to happen and you're just not ready to do it yet"),
+        ("lost",        "lost",        "lost in the subject",             "lost about whether any of this is worth it",     "you're lost in how to study it, or lost about whether you even want what's at the end of this"),
+        ("empty",       "empty",       "nothing matters right now",       "you've given so much there's nothing left",      "you're numb to all of it, or you care deeply but you're too tired to feel it right now"),
+        ("stressed",    "stressed",    "there's too much to do",          "you don't know where to start",                  "it's the workload stressing you, or the gap between where you are and where you need to be"),
+        ("frustrated",  "frustrated",  "frustrated at the situation",     "frustrated at yourself for letting it get here", "something outside you is frustrating you, or you're angry at yourself — and that's harder to admit"),
+        ("alone",       "alone",       "nobody's physically around",      "people are there but nobody actually gets it",   "you need someone there, or you need someone who understands — because those are very different things"),
+        ("pressure",    "pressure",    "pressure coming from outside",    "pressure you're putting on yourself",            "the pressure comes from them, or you've internalized it so much it now feels like yours"),
+        ("hopeless",    "hopeless",    "hopeless about this situation",   "hopeless about whether things can change",       "the situation feels hopeless, or you're starting to feel like the problem is you — and that's a harder place to be"),
+        ("confused",    "confused",    "confused about what to do",       "confused about whether you even want this",      "you're confused about the path, or confused about the destination — because that changes everything"),
+        ("hurt",        "hurt",        "hurt by what they did",           "hurt by who it came from specifically",          "what they did is the problem, or the fact that you didn't expect it from them — and that's the real wound"),
+        ("angry",       "angry",       "angry at what happened",          "angry at yourself",                              "the anger is at them, or there's some of it pointed inward too — and you haven't said that part yet"),
+        ("worried",     "worried",     "worried about results",           "worried about what comes after",                 "you're worried about this exam specifically, or worried about a bigger question you haven't let yourself think about"),
+        ("guilty",      "guilty",      "guilty about what you did",       "guilty about what you didn't do",                "it's the action itself that weighs on you, or losing how someone sees you because of it"),
+        ("embarrassed", "embarrassed", "embarrassed about what happened", "embarrassed about what people think",            "you're embarrassed about the thing, or about the fact that it happened in front of people who matter to you"),
+        ("jealous",     "jealous",     "jealous of how they're doing",    "jealous of how easy it seems for them",          "it's about them, or it's about what their success is making you feel about your own effort — and that's uncomfortable"),
+    ]
+
+    matched: tuple[str, str, str, str, str] | None = None
+    for keyword, echo_word, option_a, option_b, named_truth in emotion_map:
+        if keyword in text_lower:
+            matched = (echo_word, option_a, option_b, named_truth, keyword)
+            break
+
+    if matched:
+        echo_word, option_a, option_b, named_truth, keyword = matched
+        candidates = [
+            # Q1 — ECHO
+            f"{echo_word.capitalize()} like {option_a}, or {echo_word} like {option_b}?",
+            # Q2 — BIFURCATE
+            "Is this something that hit you suddenly, or has it been quietly building for a while without you saying it out loud?",
+            # Q3 — NAME IT
+            f"Is it that {named_truth}?",
+            # Depth extras if the first 3 were already asked
+            "What's the one specific thing that, if it changed tomorrow, would actually make a difference here?",
+            "Who around you right now actually knows how heavy this has gotten — or are you carrying it alone?",
+        ]
+    else:
+        # Pure unknown input — still personal, still uses techniques
+        candidates = [
+            # Q1 — ECHO on the situation itself
+            "When you say this — is it something that hit you all at once, or something you've been sitting with for a while?",
+            # Q2 — BIFURCATE
+            "Is it more about how you're feeling inside, or something specific that happened with someone around you?",
+            # Q3 — NAME IT
+            "What's the part of this you haven't actually said out loud yet — the thing sitting underneath what you just told me?",
+            # Depth
+            "If you had to put one word on the main thing weighing on you right now, what would it be?",
+            "Is there a specific moment you keep going back to — the one where it started feeling like this?",
+        ]
+
+    fresh = [q for q in candidates if _hash(q) not in asked_hashes]
+    return (fresh if fresh else candidates)[:3]
+
+
+# ============================================================================
+# SLOT QUESTION
+# ============================================================================
 
 def generate_question(
     domain: str,
@@ -252,22 +403,35 @@ def generate_question(
     excerpt: str | None = None,
     context: dict | None = None,
 ) -> str | None:
-    """Generate a slot-specific question."""
-    logger.debug("generate_question: domain=%s slot=%s", domain, slot)
-    context = context or {}
-    meta = context.get("meta") or {}
-    last_question = (meta.get("last_question") or "").strip()
-    user_text = context.get("user_text") or ""
+    """
+    Generate one personal, non-repeating question for a specific slot.
 
-    # Build prompt for slot-specific question
-    system = SYSTEM_PROMPT_SLOT_QUESTION.replace("{domain}", str(domain)).replace("{slot}", str(slot))
+    Used when the system knows which slot to fill next.
+    Still feels like a real person asking — never a form field.
+    """
+    logger.debug("generate_question: domain=%s slot=%s", domain, slot)
+    context       = context or {}
+    meta          = context.get("meta") or {}
+    last_question = (meta.get("last_question") or "").strip()
+    asked_qs      = context.get("asked_questions") or []
+    user_text     = context.get("user_text") or ""
+
+    system = (
+        SYSTEM_PROMPT_SLOT_QUESTION
+        .replace("{slot}",   str(slot))
+        .replace("{domain}", str(domain))
+    )
 
     payload = {
-        "user_statement": user_text[:1200],
-        "domain": domain,
-        "slot": slot,
-        "context": excerpt or "",
+        "student_said":  user_text[:1200],
+        "domain":        domain,
+        "slot":          slot,
+        "context":       excerpt or "",
+        "last_question": last_question,
+        "already_asked": asked_qs,
     }
+
+    asked_hashes = {_hash(q) for q in asked_qs}
 
     for attempt in (1, 2):
         try:
@@ -275,81 +439,127 @@ def generate_question(
                 model="gpt-4o-mini",
                 system=system,
                 user=json.dumps(payload, ensure_ascii=False),
-                max_tokens=150,
-                temperature=0.7,
+                max_tokens=180,
+                temperature=0.9,
             )
             raw = (resp.choices[0].message.content or "").strip()
-            data = json.loads(raw)
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+            raw = raw.strip()
+
+            data     = json.loads(raw)
             question = " ".join((data.get("question") or "").strip().split())
 
-            if question and question != last_question and is_valid_question(question):
+            if (
+                question
+                and question != last_question
+                and _hash(question) not in asked_hashes
+                and is_valid_question(question)
+            ):
                 return question
 
         except Exception as exc:
-            logger.warning("QUESTION_LLM_FAIL attempt=%s err=%s", attempt, exc)
+            logger.warning("generate_question attempt=%d failed: %s", attempt, exc)
 
-    # Fallback to slot-based question
-    return _get_slot_fallback(domain, slot)
-
-
-def _get_slot_fallback(domain: str, slot: str) -> str:
-    """Generate a simple but direct fallback question for any slot."""
-    
-    # Universal patterns based on slot name patterns
-    slot_lower = slot.lower()
-    
-    # Name slots
-    if "name" in slot_lower or "person" in slot_lower or "member" in slot_lower:
-        return "Who specifically - what's their name?"
-    
-    # App/game slots
-    if "app" in slot_lower or "game" in slot_lower:
-        return "Which app or game specifically - the main one?"
-    
-    # Time/hours slots
-    if "time" in slot_lower or "hour" in slot_lower:
-        return "How many hours honestly - the real number?"
-    
-    # Subject slots
-    if "subject" in slot_lower or "topic" in slot_lower:
-        return "Which subject specifically?"
-    
-    # Reason/why slots
-    if "reason" in slot_lower or "why" in slot_lower:
-        return "What's the actual reason - the real one, not the excuse?"
-    
-    # Experience/feeling slots
-    if "experience" in slot_lower or "feeling" in slot_lower:
-        return "What exactly happened - describe the specific incident?"
-    
-    # Confidence/level slots
-    if "confidence" in slot_lower or "level" in slot_lower:
-        return "On a scale of 1-10, where would you honestly put yourself?"
-    
-    # Gap/comparison slots
-    if "gap" in slot_lower or "comparison" in slot_lower:
-        return "How big is the gap - small, medium, or feels impossible?"
-    
-    # Expectation slots
-    if "expectation" in slot_lower or "expect" in slot_lower:
-        return "What exactly are they expecting - the specific target?"
-    
-    # Deadline/date slots
-    if "deadline" in slot_lower or "date" in slot_lower or "left" in slot_lower:
-        return "How many days until the deadline?"
-    
-    # Breaker/blocker slots
-    if "breaker" in slot_lower or "blocker" in slot_lower:
-        return "What's the main thing that keeps breaking your plan?"
-    
-    # Generic fallback - readable slot name
-    readable_slot = slot.replace("_", " ")
-    return f"Can you tell me specifically about your {readable_slot}?"
+    return _slot_fallback(domain, slot)
 
 
-def generate_initial_clarifiers(initial_text: str) -> list[str]:
-    """Generate challenging questions that extract specific details."""
-    return generate_counter_questions(initial_text, num_questions=3)
+# ============================================================================
+# SLOT FALLBACK
+# ============================================================================
+
+def _slot_fallback(domain: str, slot: str) -> str:
+    """
+    Personal slot fallback — BIFURCATE technique on every single one.
+    Two honest options. Never a form field.
+    """
+    s = slot.lower()
+
+    if any(k in s for k in ["name", "person", "friend", "who", "member"]):
+        return "Which person — the one you've known the longest, or someone newer who you thought you could trust?"
+
+    if any(k in s for k in ["app", "game", "platform", "site"]):
+        return "Which app or game — the one you'd be most embarrassed to show your screen time for?"
+
+    if any(k in s for k in ["hour", "time", "duration", "long", "much"]):
+        return "How many hours honestly — the real number, not the one that sounds okay to say out loud?"
+
+    if any(k in s for k in ["subject", "topic", "chapter", "concept"]):
+        return "Which subject — the one you've quietly been avoiding, or one that used to feel okay and recently stopped?"
+
+    if any(k in s for k in ["reason", "why", "cause", "because"]):
+        return "What's the real reason — not the excuse that sounds fine, but the one you actually know is true?"
+
+    if any(k in s for k in ["incident", "event", "moment", "happen", "experience"]):
+        return "What's the specific moment it actually went wrong — the thing you keep going back to?"
+
+    if any(k in s for k in ["feel", "emotion", "mood"]):
+        return "What's the main thing you're sitting with right now — the emotion under the frustration?"
+
+    if any(k in s for k in ["confidence", "level", "rating", "score"]):
+        return "Where are you honestly, 1 to 10 — and what's the thing pulling it below a 7?"
+
+    if any(k in s for k in ["expect", "want", "need", "hope"]):
+        return "What were you actually expecting from them — say it plainly, without softening it?"
+
+    if any(k in s for k in ["deadline", "date", "days", "left", "remain"]):
+        return "How many days until this — and when you think about that number, what's the first thing that hits you?"
+
+    if any(k in s for k in ["block", "obstacle", "barrier", "stop", "prevent"]):
+        return "What's the main thing that keeps getting in the way — the real one, not the surface-level one?"
+
+    if any(k in s for k in ["plan", "strategy", "approach"]):
+        return "Is it that you don't have a plan, or that you have one but you don't actually believe it'll work?"
+
+    if any(k in s for k in ["result", "score", "mark", "rank", "grade"]):
+        return "Is the result itself the problem, or what the result means about all the effort you put in?"
+
+    if any(k in s for k in ["sleep", "rest", "exhaust"]):
+        return "Is it that you can't sleep, or that you sleep but wake up feeling exactly the same weight?"
+
+    readable = slot.replace("_", " ")
+    return f"When it comes to your {readable} — is it something that happened recently, or something that's been building quietly?"
+
+
+# ============================================================================
+# UTILITY
+# ============================================================================
+
+def _hash(text: str) -> str:
+    """Stable hash for deduplication. Case-insensitive, whitespace-normalized."""
+    normalized = " ".join(text.strip().lower().split())
+    return hashlib.md5(normalized.encode()).hexdigest()
+
+
+# ============================================================================
+# PUBLIC API
+# ============================================================================
+
+def generate_initial_clarifiers(
+    initial_text: str,
+    asked_questions: list[str] | None = None,
+    conversation_history: list[dict] | None = None,
+) -> list[str]:
+    """
+    Entry point for any round of clarifying questions.
+
+    Pass the full asked_questions list on every call so questions
+    never repeat across rounds, no matter what the student says.
+
+    Args:
+        initial_text:         What the student just said.
+        asked_questions:      Every question asked so far this session.
+        conversation_history: Full chat so far as
+                              [{"role": "user"/"assistant", "text": "..."}]
+    """
+    return generate_counter_questions(
+        user_text=initial_text,
+        num_questions=3,
+        asked_questions=asked_questions or [],
+        conversation_history=conversation_history or [],
+    )
 
 
 __all__ = [

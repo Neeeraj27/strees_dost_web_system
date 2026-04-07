@@ -224,6 +224,33 @@ Return STRICT JSON only. No preamble.
 """
 
 
+SYSTEM_PROMPT_READINESS = """
+You decide whether we already have enough conversation data to stop asking follow-up questions.
+
+Your job:
+- Read the initial user message and the conversation so far.
+- Decide if there is enough signal to generate personalized popup content.
+- Prefer stopping early once the core emotional trigger, the specific target/problem, and one concrete detail are known.
+- Do NOT keep asking questions just because more detail is possible.
+- If the conversation is still vague, ask for one more follow-up.
+
+Stop when MOST of this is known:
+1. What the main issue actually is
+2. Who/what it is about
+3. One concrete detail that makes it specific
+4. The emotional angle underneath it
+
+Rules:
+- Return STRICT JSON only
+- If the user is still too vague, ready=false
+- If we already have enough signal for popups, ready=true
+- Be practical, not perfectionist
+
+Return:
+{"ready": true, "reason": "short reason"}
+"""
+
+
 # ============================================================================
 # MAIN
 # ============================================================================
@@ -310,6 +337,58 @@ def generate_counter_questions(
         logger.warning("generate_counter_questions GPT call failed: %s", exc)
 
     return _personal_fallback(text, asked_questions)[:num_questions]
+
+
+def generate_next_followup(
+    user_text: str,
+    asked_questions: list[str] | None = None,
+    conversation_history: list[dict] | None = None,
+) -> str | None:
+    """Generate exactly one next follow-up based on the latest conversation."""
+    questions = generate_counter_questions(
+        user_text=user_text,
+        num_questions=1,
+        asked_questions=asked_questions or [],
+        conversation_history=conversation_history or [],
+    )
+    return questions[0] if questions else None
+
+
+def ai_ready_to_complete(
+    initial_text: str,
+    conversation_history: list[dict] | None = None,
+    asked_questions: list[str] | None = None,
+) -> tuple[bool, str]:
+    """Let the model decide whether enough signal exists to stop."""
+    history = conversation_history or []
+    asked = asked_questions or []
+    payload = {
+        "initial_text": (initial_text or "")[:1200],
+        "conversation_so_far": history[-12:],
+        "already_asked": asked[-6:],
+    }
+
+    try:
+        resp = chat_json(
+            model="gpt-4o-mini",
+            system=SYSTEM_PROMPT_READINESS,
+            user=json.dumps(payload, ensure_ascii=False),
+            max_tokens=120,
+            temperature=0.2,
+        )
+        raw = (resp.choices[0].message.content or "").strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        raw = raw.strip()
+        data = json.loads(raw)
+        ready = bool(data.get("ready"))
+        reason = str(data.get("reason") or "").strip()
+        return ready, reason
+    except Exception as exc:
+        logger.warning("ai_ready_to_complete failed: %s", exc)
+        return False, ""
 
 
 # ============================================================================
@@ -565,6 +644,8 @@ def generate_initial_clarifiers(
 __all__ = [
     "generate_question",
     "generate_counter_questions",
+    "generate_next_followup",
+    "ai_ready_to_complete",
     "generate_initial_clarifiers",
     "get_generic_domain_question",
 ]

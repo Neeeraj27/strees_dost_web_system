@@ -19,7 +19,9 @@ from ..services.planner import (
 )
 from ..services.popup_generator import generate_popups
 from ..services.question_generator import (
+    ai_ready_to_complete,
     generate_initial_clarifiers,
+    generate_next_followup,
     generate_question,
     get_generic_domain_question,
 )
@@ -74,9 +76,7 @@ def start_session():
         current_app.logger.debug("start_session: causes=%s", causes)
         meta = dict(session.meta or {})
         meta["causes"] = causes
-        clarifiers = generate_initial_clarifiers(text) or []
-        # keep up to 3 sharp clarifiers
-        meta["clarifier_queue"] = clarifiers[:3]
+        meta["clarifier_queue"] = []
         session.meta = meta
 
         session.active_domains = prefill.active_domains or activate_domains_from_causes(causes)
@@ -230,19 +230,39 @@ def next_question(session_id: str):
             }
         )
 
-    clarifier_queue = list((meta.get("clarifier_queue") or []))
-    if clarifier_queue:
-        question = clarifier_queue.pop(0)
-        meta["clarifier_queue"] = clarifier_queue
-        meta["current_question"] = {"type": "clarifier", "question": question}
+    asked_questions = [
+        item.get("text", "")
+        for item in (session.history or [])
+        if isinstance(item, dict) and item.get("role") == "assistant"
+    ]
+    total_questions = int(meta.get("total_questions_asked", 0))
+
+    if total_questions > 0:
+        ready, reason = ai_ready_to_complete(
+            session.raw_initial_text or "",
+            conversation_history=session.history or [],
+            asked_questions=asked_questions,
+        )
+        if ready:
+            current_app.logger.info("next_question: ai completed session reason=%s", reason)
+            return _complete_session(session)
+
+    followup = generate_next_followup(
+        user_text=session.raw_initial_text or "",
+        asked_questions=asked_questions,
+        conversation_history=session.history or [],
+    )
+    if followup:
+        meta["current_question"] = {"type": "clarifier", "question": followup}
+        meta["total_questions_asked"] = total_questions + 1
         session.meta = meta
-        session.history.append({"role": "assistant", "text": question})
+        session.history.append({"role": "assistant", "text": followup})
         save_session(session)
         return jsonify(
             {
                 "done": False,
                 "clarifier": True,
-                "question": question,
+                "question": followup,
                 "meta": session.meta,
             }
         )
@@ -266,7 +286,6 @@ def next_question(session_id: str):
     def _is_missing(domain: str, slot: str) -> bool:
         return not session.filled_slots.get(domain, {}).get(slot)
 
-    total_questions = int(meta.get("total_questions_asked", 0))
     domain_counts = dict(meta.get("domain_question_count") or {})
     combo_history = set(meta.get("combo_history") or [])
     raw_text = session.raw_initial_text or ""
@@ -526,6 +545,7 @@ def test_popup(session_id: str):
 def _complete_session(session):
     session.status = "completed"
     stress_profile = session.filled_slots or {}
+    stress_profile["__raw_text__"] = session.raw_initial_text or ""
     # pass clarifier answers to popup generator for personalization
     meta = dict(session.meta or {})
     clarifier_answers = meta.get("clarifier_answers")

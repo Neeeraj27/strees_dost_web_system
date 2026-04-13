@@ -1,6 +1,7 @@
 // DOM helpers --------------------------------------------------------------
 const $ = (id) => document.getElementById(id);
 const stageEls = {
+  name: $("stageName"),
   intro: $("stageIntro"),
   loading: $("stageLoading"),
   qa: $("stageQA"),
@@ -16,7 +17,9 @@ let popupTimer = null;
 const recentPopups = new Set();
 
 const loadingTextEl = $("loadingText");
+const nameHintEl = $("nameHint");
 const introHintEl = $("introHint");
+const storyPromptEl = $("storyPrompt");
 const hintBox = $("hintBox");
 const popupSummary = $("popupSummary");
 const suggestionWrap = $("suggestionWrap");
@@ -27,10 +30,13 @@ const hudToggle = $("hudToggle");
 const btnCloseHud = $("btnCloseHud");
 
 const btnStart = $("btnStart");
+const btnNameNext = $("btnNameNext");
 const btnRecord = $("btnRecord");
 const btnAnswer = $("btnAnswer");
+const btnSkip = $("btnSkip");
 const btnReset = $("btnReset");
 const btnRestart = $("btnRestart");
+const userNameInput = $("userName");
 
 const answerInput = $("answerInput");
 const questionStem = $("questionStem");
@@ -137,6 +143,25 @@ function setIntroHint(text) {
   }
 }
 
+function setNameHint(text) {
+  if (!nameHintEl) return;
+  nameHintEl.textContent = text || "";
+  if (text) {
+    stageEls.name?.classList.add("shake");
+    setTimeout(() => stageEls.name?.classList.remove("shake"), 400);
+  }
+}
+
+function setStoryPrompt(name) {
+  if (!storyPromptEl) return;
+  const cleanName = (name || "").trim();
+  if (!cleanName) {
+    storyPromptEl.textContent = "What's on your mind today?";
+    return;
+  }
+  storyPromptEl.textContent = `Hey ${cleanName}, what's on your mind today?`;
+}
+
 function setRecordButtonState() {
   if (!btnRecord) return;
   if (mediaRecorder && mediaRecorder.state === "recording") {
@@ -168,9 +193,14 @@ function updateScoreMeta() {
 function setQuestionUI(data) {
   currentDomain = data.domain || null;
   currentSlot = data.slot || null;
+  const totalAsked = Number(data?.meta?.total_questions_asked || 0);
 
   $("qMeta").textContent = `domain: ${currentDomain || "—"} | slot: ${currentSlot || "—"}`;
   $("questionText").textContent = data.question || "Your next question will bloom here.";
+  if (btnSkip) {
+    btnSkip.hidden = totalAsked < 3;
+    btnSkip.disabled = false;
+  }
   setHint(data.hint || "");
   btnAnswer.disabled = false;
   answerInput.disabled = false;
@@ -183,7 +213,12 @@ function resetFlow() {
   currentSlot = null;
   setSuggestions([]);
   btnAnswer.disabled = true;
+  if (btnSkip) {
+    btnSkip.hidden = true;
+    btnSkip.disabled = false;
+  }
   answerInput.value = "";
+  if (userNameInput) userNameInput.value = "";
   $("initialText").value = "";
   recordedAudioBlob = null;
   recordingMimeType = "audio/webm";
@@ -198,7 +233,9 @@ function resetFlow() {
   audioChunks = [];
   setRecordButtonState();
   setHint("");
+  setNameHint("");
   setIntroHint("");
+  setStoryPrompt("");
   // Reset test question panel
   testQuestions = [];
   testQuestionIndex = 0;
@@ -217,7 +254,20 @@ function resetFlow() {
   popupOverlay.innerHTML = "";
   log("reset_flow");
   setSessionUI(null, null);
+  showStage("name");
+}
+
+function proceedFromNameStep() {
+  const name = (userNameInput?.value || "").trim();
+  if (!name) {
+    setNameHint("Please enter your name first.");
+    userNameInput?.focus();
+    return;
+  }
+  setNameHint("");
+  setStoryPrompt(name);
   showStage("intro");
+  $("initialText")?.focus();
 }
 
 async function startRecording() {
@@ -689,6 +739,7 @@ async function startSessionFlow() {
       showStage("intro");
       return;
     }
+
     setIntroHint("");
     showStage("loading", "Absorbing your story…");
 
@@ -777,6 +828,23 @@ async function submitAnswer() {
   }
 }
 
+async function skipRemainingQuestions() {
+  if (!sessionId || !btnSkip || btnSkip.hidden || btnSkip.disabled) return;
+  try {
+    btnSkip.disabled = true;
+    btnAnswer.disabled = true;
+    showStage("loading", "Skipping remaining questions…");
+    await postJSON(`/session/${sessionId}/complete`, {});
+    await handleCompletion();
+  } catch (err) {
+    log("skip_error", err.message);
+    setHint(err.message || "Could not skip right now.");
+    btnSkip.disabled = false;
+    btnAnswer.disabled = false;
+    showStage("qa");
+  }
+}
+
 async function handleCompletion() {
   showStage("loading", "Designing your focus pulses…");
   try {
@@ -803,6 +871,13 @@ btnCloseHud?.addEventListener("click", () => toggleHud(false));
 
 // Events -------------------------------------------------------------------
 btnStart?.addEventListener("click", startSessionFlow);
+btnNameNext?.addEventListener("click", proceedFromNameStep);
+userNameInput?.addEventListener("keydown", (evt) => {
+  if (evt.key === "Enter") {
+    evt.preventDefault();
+    proceedFromNameStep();
+  }
+});
 btnRecord?.addEventListener("click", async () => {
   try {
     if (mediaRecorder && mediaRecorder.state === "recording") {
@@ -816,6 +891,7 @@ btnRecord?.addEventListener("click", async () => {
   }
 });
 btnAnswer?.addEventListener("click", submitAnswer);
+btnSkip?.addEventListener("click", skipRemainingQuestions);
 btnRestart?.addEventListener("click", resetFlow);
 btnReset?.addEventListener("click", resetFlow);
 btnPrevQuestion?.addEventListener("click", () => gotoQuestion(-1));
@@ -829,7 +905,7 @@ function setSuggestions(items) {
   suggestionList.innerHTML = "";
   const list = Array.isArray(items) ? items.filter(Boolean) : [];
   if (!list.length) {
-    suggestionWrap.style.display = "none";
+    suggestionWrap.hidden = true;
     return;
   }
   list.forEach((text) => {
@@ -840,7 +916,7 @@ function setSuggestions(items) {
     pill.addEventListener("click", () => applySuggestion(text));
     suggestionList.appendChild(pill);
   });
-  suggestionWrap.style.display = "block";
+  suggestionWrap.hidden = false;
 }
 
 function applySuggestion(text) {

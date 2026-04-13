@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import hashlib
+import re
 from .fallbacks import FALLBACK_QUESTIONS
 from .validators import is_valid_question
 from .openai_client import chat_json
@@ -64,8 +65,14 @@ ADAPTIVE EXTRACTION (CRITICAL)
 Q1 MUST extract a SPECIFIC IDENTIFIER based on context:
 
 IF user mentions a PERSON (friend, teacher, parent, someone):
-→ Ask NAME or exact identity  
-   "which friend exactly — what's their name?"
+→ Ask NAME or exact identity
+    Use natural forms like:
+    - "Which friend exactly? Can you name them?" (plural/unclear)
+    - "Can you tell me your friend's name?" (single)
+
+IMPORTANT:
+- Never use the student's own name as the friend/person unless user explicitly says they are referring to themselves.
+- Do not offer choices like "<student_name> or any other friend".
 
 IF user mentions STUDIES (exam, stress, subject, marks):
 → Ask SUBJECT / CHAPTER  
@@ -88,7 +95,8 @@ IF user is VAGUE:
   ❌ "someone?"
   ❌ "one person?"
 - ALWAYS force specificity:
-  ✅ "which friend — name?"
+    ✅ "which friend exactly? can you name them?"
+    ✅ "can you tell me your friend's name?"
   ✅ "which subject?"
   ✅ "what exactly?"
 - NEVER force a NAME if no person exists
@@ -311,6 +319,7 @@ def generate_counter_questions(
             if not isinstance(q, str):
                 continue
             q_clean = " ".join(q.strip().split())
+            q_clean = _strip_leading_vocative(q_clean)
             if (
                 q_clean.endswith("?")
                 and 15 <= len(q_clean) <= 400
@@ -521,6 +530,7 @@ def generate_question(
 
             data     = json.loads(raw)
             question = " ".join((data.get("question") or "").strip().split())
+            question = _strip_leading_vocative(question)
 
             if (
                 question
@@ -601,6 +611,24 @@ def _hash(text: str) -> str:
     """Stable hash for deduplication. Case-insensitive, whitespace-normalized."""
     normalized = " ".join(text.strip().lower().split())
     return hashlib.md5(normalized.encode()).hexdigest()
+
+
+def _strip_leading_vocative(text: str) -> str:
+    """Remove leading direct-name address such as 'So, Rahul, ...'."""
+    candidate = (text or "").strip()
+    if not candidate:
+        return candidate
+    patterns = [
+        r"^(?:so\s*,\s*)?[a-z][a-z'\-]{1,30}\s*,\s*(.+)$",
+        r"^(?:hey\s+)?[a-z][a-z'\-]{1,30}\s*,\s*(.+)$",
+    ]
+    for pattern in patterns:
+        match = re.match(pattern, candidate, flags=re.IGNORECASE)
+        if match:
+            remainder = " ".join(match.group(1).split())
+            if remainder:
+                return remainder[0].upper() + remainder[1:]
+    return candidate
 
 
 # ============================================================================

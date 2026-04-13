@@ -32,7 +32,8 @@ from ..services.slot_manager import (
     is_slot_allowed,
     set_slot_value,
 )
-from ..services.slot_prefill_llm import prefill_slots_with_llm
+from ..services.slot_prefill_llm import prefill_slots_with_llm, update_state_with_user_reply
+from ..services.slot_prefill_schema import SessionState
 from ..services.relevance import combo_relevant, domain_relevant
 from ..services.stop_engine import should_stop
 
@@ -77,6 +78,8 @@ def start_session():
         meta = dict(session.meta or {})
         meta["causes"] = causes
         meta["clarifier_queue"] = []
+        if getattr(prefill, "extracted_state", None):
+            meta["extracted_state"] = prefill.extracted_state.model_dump()
         session.meta = meta
 
         session.active_domains = prefill.active_domains or activate_domains_from_causes(causes)
@@ -119,12 +122,23 @@ def answer(session_id: str):
     answer_text = (body.get("answer") or "").strip()
 
     meta = dict(session.meta or {})
+
+    def _update_extracted_state(new_text: str) -> None:
+        raw = meta.get("extracted_state") or {}
+        try:
+            current_state = SessionState(**raw)
+        except Exception:
+            current_state = SessionState()
+        updated = update_state_with_user_reply(current_state, new_text)
+        meta["extracted_state"] = updated.model_dump()
+
     current_question = meta.get("current_question") or {}
     if current_question.get("type") == "clarifier":
         clarifier_answers = list(meta.get("clarifier_answers") or [])
         clarifier_answers.append({"question": current_question.get("question"), "answer": answer_text})
         meta["clarifier_answers"] = clarifier_answers
         meta["current_question"] = None
+        _update_extracted_state(answer_text)
         session.meta = meta
         session.history.append({"role": "user", "text": answer_text})
         save_session(session)
@@ -155,6 +169,7 @@ def answer(session_id: str):
                 meta["emotion_signals"] = signals
 
             meta["current_question"] = None
+            _update_extracted_state(answer_text)
             session.meta = meta
             session.history.append({"role": "user", "text": answer_text})
             save_session(session)
@@ -202,6 +217,7 @@ def answer(session_id: str):
     session.history.append({"role": "user", "text": answer_text})
     set_slot_value(session.filled_slots, domain, slot, answer_text)
     meta["current_question"] = None
+    _update_extracted_state(answer_text)
     session.meta = meta
 
     save_session(session)
@@ -236,8 +252,9 @@ def next_question(session_id: str):
         if isinstance(item, dict) and item.get("role") == "assistant"
     ]
     total_questions = int(meta.get("total_questions_asked", 0))
+    min_required_questions = max(3, int(current_app.config.get("MIN_QUESTIONS", 3)))
 
-    if total_questions > 0:
+    if total_questions >= min_required_questions:
         ready, reason = ai_ready_to_complete(
             session.raw_initial_text or "",
             conversation_history=session.history or [],
@@ -350,7 +367,7 @@ def next_question(session_id: str):
     if should_stop(
         total_questions_asked=total_questions,
         missing_slots_count=len(missing),
-        min_questions=current_app.config["MIN_QUESTIONS"],
+        min_questions=min_required_questions,
         max_questions=current_app.config["MAX_QUESTIONS"],
     ):
         return _complete_session(session)

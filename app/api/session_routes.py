@@ -272,29 +272,15 @@ def next_question(session_id: str):
     total_questions = int(meta.get("total_questions_asked", 0))
     min_required_questions = max(3, int(current_app.config.get("MIN_QUESTIONS", 3)))
 
-    # ── Follow-up phase ───────────────────────────────────────────────────────
-    # Read the authoritative server-side follow-up counter from runtime memory.
-    # The client also sends followup_count and followups_done as a hint, but
-    # the server counter is authoritative for the hard-cap and readiness checks.
+    # Follow-up phase
     body = request.get_json(force=True, silent=True) or {}
     client_followups_done = bool(body.get("followups_done", False))
-
     followup_count = get_followup_count(session_id)
-
-    # Only attempt follow-ups when:
-    #   1. Client hasn't signalled it's done (user pressed Skip)
-    #   2. Hard cap not yet reached
-    #   3. We have not yet crossed into the slot-filling phase
-    #      (tracked by meta flag "followups_exhausted")
     followups_exhausted = bool(meta.get("followups_exhausted", False))
 
     if not client_followups_done and not followups_exhausted and not followup_limit_reached(followup_count):
         followup = generate_next_followup(
             user_text=session.raw_initial_text or "",
-    if total_questions >= min_required_questions:
-        ready, reason = ai_ready_to_complete(
-            session.raw_initial_text or "",
-            conversation_history=session.history or [],
             asked_questions=asked_questions,
             conversation_history=session.history or [],
             followup_count=followup_count,
@@ -303,7 +289,6 @@ def next_question(session_id: str):
         )
 
         if followup:
-            # Increment the runtime counter now that we're delivering the question
             new_count = increment_followup_count(session_id)
             show_skip = should_show_skip_button(new_count)
 
@@ -330,51 +315,22 @@ def next_question(session_id: str):
                 }
             )
         else:
-            # generate_next_followup returned None — either AI says ready or
-            # the hard cap was reached inside the generator.
-            # Mark followups exhausted so we never enter this branch again.
             current_app.logger.info(
-                "next_question: followup generator returned None (count=%d) — moving to slot phase session=%s",
+                "next_question: followup generator returned None (count=%d), moving to slot phase session=%s",
                 followup_count, session_id,
             )
             meta["followups_exhausted"] = True
             session.meta = meta
-            # Fall through to slot-filling below; signal the client too.
 
     elif not followups_exhausted and (client_followups_done or followup_limit_reached(followup_count)):
-        # Client skipped or hard cap hit — mark exhausted so we don't re-enter
         current_app.logger.info(
             "next_question: followups done/skipped (client_done=%s count=%d) session=%s",
             client_followups_done, followup_count, session_id,
-    asked_hashes = {" ".join((q or "").strip().lower().split()) for q in asked_questions if q}
-
-    followup = generate_next_followup(
-        user_text=session.raw_initial_text or "",
-        asked_questions=asked_questions,
-        conversation_history=session.history or [],
-    )
-    followup_norm = " ".join((followup or "").strip().lower().split())
-    if followup and followup_norm not in asked_hashes:
-        meta["current_question"] = {"type": "clarifier", "question": followup}
-        meta["total_questions_asked"] = total_questions + 1
-        session.meta = meta
-        session.history.append({"role": "assistant", "text": followup})
-        save_session(session)
-        return jsonify(
-            {
-                "done": False,
-                "clarifier": True,
-                "question": followup,
-                "meta": session.meta,
-            }
         )
         meta["followups_exhausted"] = True
         session.meta = meta
 
-    # ── Slot-filling phase ────────────────────────────────────────────────────
-    # Followups are now exhausted.  From here the logic is identical to the
-    # original implementation — we just removed the early ai_ready_to_complete
-    # call that was short-circuiting into completion before followups ran.
+    # Slot-filling phase
 
     if not session.active_domains:
         session.active_domains = extract_components(session.raw_initial_text or "")
@@ -565,7 +521,7 @@ def next_question(session_id: str):
     return jsonify(
         {
             "done": False,
-            "followups_complete": True,  # inform client we're now in slot phase
+            "followups_complete": True,
             "domain": domain,
             "slot": slot,
             "question": question,

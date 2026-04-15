@@ -5,6 +5,7 @@ const stageEls = {
   intro: $("stageIntro"),
   loading: $("stageLoading"),
   qa: $("stageQA"),
+  devil: $("stageDevil"),
   popups: $("stagePopups"),
 };
 
@@ -36,6 +37,7 @@ const btnAnswer = $("btnAnswer");
 const btnSkip = $("btnSkip");
 const btnReset = $("btnReset");
 const btnRestart = $("btnRestart");
+const btnAcceptChallenge = $("btnAcceptChallenge");
 const userNameInput = $("userName");
 const btnLogout = $("btnLogout");
 const userChip = $("userChip");
@@ -58,6 +60,13 @@ const btnPrevQuestion = $("btnPrevQuestion");
 const btnNextQuestion = $("btnNextQuestion");
 const btnReloadQuestions = $("btnReloadQuestions");
 const btnSubmitQuestion = $("btnSubmitQuestion");
+const devilTitle = $("devilTitle");
+const devilIntro = $("devilIntro");
+const devilProblems = $("devilProblems");
+const devilDesign = $("devilDesign");
+const devilBlueprint = $("devilBlueprint");
+const devilChallengeLine = $("devilChallengeLine");
+const devilHint = $("devilHint");
 
 // State --------------------------------------------------------------------
 let sessionId = null;
@@ -503,6 +512,10 @@ function resetFlow() {
   if (questionProgress) questionProgress.style.width = "0%";
   if (mutateBadge) mutateBadge.style.display = "none";
   if (integerPanel) integerPanel.style.display = "none";
+  if (devilProblems) devilProblems.innerHTML = "";
+  if (devilDesign) devilDesign.innerHTML = "";
+  if (devilBlueprint) devilBlueprint.innerHTML = "";
+  if (devilHint) devilHint.textContent = "";
   updateScoreMeta();
   setTestHint("");
   popupSummary.textContent = "We're releasing your personalized pulses now. Watch the center top.";
@@ -510,6 +523,109 @@ function resetFlow() {
   log("reset_flow");
   setSessionUI(null, null);
   showStage("name");
+}
+
+function summarizeFollowupThemes(followups) {
+  const text = (followups || []).map((f) => `${f.answer || ""} ${f.domain || ""} ${f.slot || ""}`).join(" ").toLowerCase();
+  const out = [];
+  if (/panic|anx|nerv|fear|scared/.test(text)) out.push("panic spikes under pressure");
+  if (/procrast|delay|later|tomorrow|avoid/.test(text)) out.push("delay loops before action");
+  if (/phone|instagram|youtube|reel|game|chat|social/.test(text)) out.push("digital distraction susceptibility");
+  if (/compare|friend|rank|others|competition/.test(text)) out.push("comparison-triggered confidence dips");
+  if (/time|late|schedule|rush|deadline/.test(text)) out.push("time-management stress");
+  if (/sleep|tired|fatigue|exhaust/.test(text)) out.push("energy inconsistency across sessions");
+  if (!out.length) out.push("decision hesitation in uncertain questions");
+  return out.slice(0, 4);
+}
+
+async function buildDevilBriefPage() {
+  const followups = StressTriggers.getFollowupAnswers ? StressTriggers.getFollowupAnswers() : [];
+  const themes = summarizeFollowupThemes(followups);
+
+  const planned = {
+    trigger_count: 19,
+    one_trigger_at_a_time: true,
+    ai_driven: true,
+    event_rules: [
+      "wrong_answer -> pressure trigger",
+      "answer_changed -> hesitation trigger",
+      "idle_resumed -> distraction trigger",
+      "time_pressure -> urgency trigger",
+    ],
+    expected_question_count: testQuestions.length || 20,
+  };
+
+  let brief = null;
+  try {
+    brief = await postJSON("/api/triggers/devil-brief", {
+      followup_answers: followups,
+      planned_test: planned,
+    }, { timeoutMs: 6000 });
+  } catch (err) {
+    brief = null;
+  }
+
+  const devilName = brief?.devil_name || "The Invigilator Devil";
+  const intro = brief?.intro || "I shaped this test using your follow-up responses: where focus breaks, where doubt wins, where time pressure hurts.";
+  const taunt = brief?.taunt || "Accept my challenge. I know your weak points. I doubt you can beat me.";
+  const problems = Array.isArray(brief?.problems) && brief.problems.length
+    ? brief.problems
+    : themes.map((t) => `You show signs of ${t}.`);
+  const designPoints = Array.isArray(brief?.design_points) && brief.design_points.length
+    ? brief.design_points
+    : [
+      "Every trigger is activated by interaction signals, not random timers.",
+      "Only one trigger can run at a time with strict timeout control.",
+      "Wrong answers and hesitation now directly shape pressure style.",
+      "AI selects the next trigger based on your live behavior.",
+    ];
+  const challengeLine = (Array.isArray(brief?.challenge_lines) && brief.challenge_lines[0])
+    ? brief.challenge_lines[0]
+    : "Accept my challenge and beat me if your focus is stronger than your fear.";
+
+  if (devilTitle) devilTitle.textContent = `${devilName} Designed Your Test`;
+  if (devilIntro) devilIntro.textContent = intro;
+  if (devilChallengeLine) devilChallengeLine.textContent = challengeLine;
+
+  if (devilProblems) {
+    devilProblems.innerHTML = "";
+    problems.slice(0, 5).forEach((line) => {
+      const li = document.createElement("li");
+      li.textContent = line;
+      devilProblems.appendChild(li);
+    });
+  }
+
+  if (devilDesign) {
+    devilDesign.innerHTML = "";
+    designPoints.slice(0, 5).forEach((line) => {
+      const li = document.createElement("li");
+      li.textContent = line;
+      devilDesign.appendChild(li);
+    });
+  }
+
+  if (devilBlueprint) {
+    const expected = testQuestions.length || 20;
+    devilBlueprint.innerHTML = "";
+    const metrics = [
+      ["Question Set", `${expected} adaptive questions`],
+      ["Trigger Mode", "AI controlled + event based"],
+      ["Concurrency", "Single active trigger only"],
+      ["Timeout Policy", "2s to 12s per trigger"],
+      ["Primary Pressure Inputs", "Wrong answers, hesitation, idle, time pressure"],
+    ];
+    metrics.forEach(([label, value]) => {
+      const row = document.createElement("div");
+      row.className = "devil-metric";
+      row.innerHTML = `<span>${escapeHTML(label)}</span><strong>${escapeHTML(value)}</strong>`;
+      devilBlueprint.appendChild(row);
+    });
+  }
+
+  if (devilHint) {
+    devilHint.textContent = "Review this brief, then accept the challenge to start the test.";
+  }
 }
 
 function proceedFromNameStep() {
@@ -611,12 +727,22 @@ function cloneClientFallbackQuestions() {
 // Stress trigger engine ----------------------------------------------------
 const StressTriggers = (() => {
   const reducedMotion = Boolean(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  const AI_TRIGGER_ENDPOINT = "/api/triggers/recommend";
+  const AI_DECISION_MIN_GAP_MS = 700;
+  const AI_DECISION_TIMEOUT_MS = 4500;
+  const AI_DECISION_TIMEOUT_FAST_MS = 1400;
+  const TRIGGER_COOLDOWN_FACTOR = 0.5;
+  const MIN_COOLDOWN_MS = 2200;
+  const KEEPALIVE_GAP_MS = 2400;
+  const LONG_HESITATION_THRESHOLD_MS = 12000;
+  const LONG_HESITATION_REPEAT_GAP_MS = 14000;
+  const POST_ANSWER_RANDOM_TRIGGER_PROB = 0.33;
   const active = new Map();
   const cooldownUntil = new Map();
   const activationCounts = new Map();
   const devButtons = new Map();
   let audioContext = null;
-  let autoEvaluateTimer = null;
+  let passiveMonitorTimer = null;
   const state = {
     stage: "name",
     examStartedAt: 0,
@@ -636,6 +762,18 @@ const StressTriggers = (() => {
     lastConfidencePunchIndex: -1,
     lastMiragePunchIndex: -1,
     followupAnswers: [],
+    wrongAnswersCount: 0,
+    totalSubmissions: 0,
+    correctStreak: 0,
+    aiDecisionInFlight: false,
+    lastAIDecisionAt: 0,
+    recentTriggerNames: [],
+    serialTriggerCursor: 0,
+    queuedTriggerRequest: null,
+    lastLongHesitationTriggerAt: 0,
+    lastEnsureActiveAt: 0,
+    lastTriggerActivatedAt: 0,
+    lastTriggerEndedAt: 0,
   };
 
   const triggerConfig = {
@@ -659,6 +797,28 @@ const StressTriggers = (() => {
     hesitationHeatmap: { conflicts: [], cooldown: [18000, 26000] },
     bollywoodReelTrap: { conflicts: ["blackout", "fakeCrashScreen"], cooldown: [32000, 52000] },
   };
+
+  const serialTriggerOrder = [
+    "optionShuffle",
+    "phantomCompetitor",
+    "stressTimer",
+    "confidenceBreaker",
+    "mirageHighlight",
+    "spatialTicking",
+    "fakeMentorCount",
+    "hesitationHeatmap",
+    "heartbeatVibration",
+    "colorInversion",
+    "waveDistortion",
+    "bollywoodReelTrap",
+    "fakeLowBattery",
+    "chaosBackground",
+    "screenFlip",
+    "shepardTone",
+    "blurAttack",
+    "fakeCrashScreen",
+    "blackout",
+  ];
 
   function debugLog(kind, detail) {
     if (!stressDebug) return;
@@ -787,7 +947,7 @@ const StressTriggers = (() => {
     if (!force && state.stage !== "popups") return { ok: false, reason: "stage" };
     if (active.has(name)) return { ok: false, reason: "active" };
     if (!force && state.lastTriggerName === name) return { ok: false, reason: "repeat" };
-    if (!force && active.size >= 2) return { ok: false, reason: "max-active" };
+    if (active.size >= 1) return { ok: false, reason: "max-active" };
     const until = cooldownUntil.get(name) || 0;
     if (!force && Date.now() < until) return { ok: false, reason: "cooldown" };
     const config = triggerConfig[name] || { conflicts: [] };
@@ -813,7 +973,8 @@ const StressTriggers = (() => {
   function setCooldown(name) {
     const cfg = triggerConfig[name] || { cooldown: [15000, 30000] };
     const [minMs, maxMs] = cfg.cooldown || [15000, 30000];
-    const cooldown = stableRange(name, minMs, maxMs);
+    const rawCooldown = stableRange(name, minMs, maxMs);
+    const cooldown = Math.max(MIN_COOLDOWN_MS, Math.floor(rawCooldown * TRIGGER_COOLDOWN_FACTOR));
     cooldownUntil.set(name, Date.now() + cooldown);
   }
 
@@ -827,7 +988,12 @@ const StressTriggers = (() => {
       );
     }
     active.set(name, { cleanupFn, timers, activatedAt: Date.now() });
+    state.lastTriggerActivatedAt = Date.now();
     state.lastTriggerName = name;
+    state.recentTriggerNames.push(name);
+    if (state.recentTriggerNames.length > 12) {
+      state.recentTriggerNames = state.recentTriggerNames.slice(-12);
+    }
     setCooldown(name);
     activationCounts.set(name, (activationCounts.get(name) || 0) + 1);
     refreshDevButtonState(name);
@@ -844,8 +1010,20 @@ const StressTriggers = (() => {
       debugLog("cleanup_error", `${name}:${e?.message || String(e)}`);
     }
     active.delete(name);
+    state.lastTriggerEndedAt = Date.now();
     refreshDevButtonState(name);
     debugLog("ended", name);
+
+    if (state.queuedTriggerRequest && active.size === 0 && state.stage === "popups") {
+      const queued = state.queuedTriggerRequest;
+      state.queuedTriggerRequest = null;
+      setTimeout(() => {
+        requestTriggerFromAI("queued_followup", {
+          queued_event: queued.eventType,
+          from_trigger: name,
+        });
+      }, 180);
+    }
   }
 
   function deactivateAllTriggers() {
@@ -1959,8 +2137,6 @@ const StressTriggers = (() => {
     shell?.classList.add("stress-news-diversion-open");
 
     const storyEl = panel.querySelector('[data-role="story"]');
-    let closeTimer = null;
-
     async function renderFact() {
       let best = null;
       try {
@@ -2002,17 +2178,13 @@ const StressTriggers = (() => {
         `;
       }
 
-      closeTimer = setTimeout(() => {
-        deactivateTrigger("bollywoodReelTrap");
-      }, 5000);
     }
 
     renderFact();
 
     return {
-      durationMs: 0,
+      durationMs: stableRange("bollywoodReelTrap_duration", 5000, 7000),
       cleanup: () => {
-        if (closeTimer) clearTimeout(closeTimer);
         shell?.classList.remove("stress-news-diversion-open");
         panel.remove();
       },
@@ -2049,27 +2221,250 @@ const StressTriggers = (() => {
     }
     const handler = triggerHandlers[name];
     if (!handler) return false;
-    const out = handler(context);
+    let out = null;
+    try {
+      out = handler(context);
+    } catch (err) {
+      debugLog("handler_error", `${name}:${err?.message || String(err)}`);
+      return false;
+    }
     if (!out) {
       debugLog("rejected", `${name}:no-effect`);
       return false;
     }
-    registerTrigger(name, out.cleanup, Number(out.durationMs || 0));
+    const requestedDuration = Number(context?.timeoutMs || 0);
+    const handlerDuration = Number(out.durationMs || 0);
+    let durationMs = requestedDuration > 0 ? requestedDuration : handlerDuration;
+    if (durationMs > 0) {
+      durationMs = Math.max(2000, Math.min(12000, durationMs));
+    }
+    registerTrigger(name, out.cleanup, durationMs);
     return true;
   }
 
-  function autoEvaluate() {
-    if (disableStressMode) return;
-    if (state.stage !== "popups") return;
-    if (!testQuestions.length) return;
+  function chooseFallbackTrigger(eventType, userState, available) {
+    const map = {
+      enter_popups: ["fakeMentorCount", "phantomCompetitor", "stressTimer"],
+      wrong_answer: ["confidenceBreaker", "stressTimer", "phantomCompetitor"],
+      answer_changed: ["optionShuffle", "hesitationHeatmap", "mirageHighlight"],
+      hover_hesitation: ["mirageHighlight", "hesitationHeatmap"],
+      long_hesitation: ["phantomCompetitor", "stressTimer", "spatialTicking"],
+      idle_resumed: ["blurAttack", "chaosBackground", "bollywoodReelTrap"],
+      time_pressure: ["heartbeatVibration", "stressTimer", "fakeLowBattery"],
+      question_loaded: ["fakeMentorCount", "phantomCompetitor"],
+      submit_attempt: ["spatialTicking", "stressTimer"],
+      post_answer_random: ["confidenceBreaker", "spatialTicking", "stressTimer"],
+    };
+    const candidates = map[eventType] || [];
+    for (const name of candidates) {
+      if (available.includes(name)) return name;
+    }
+    if (userState.answerChangeCount >= 3 && available.includes("optionShuffle")) return "optionShuffle";
+    if (userState.timeOnQuestionMs > 12000 && available.includes("phantomCompetitor")) return "phantomCompetitor";
+    return null;
+  }
 
-    const userState = currentUserState();
-    const ranked = evaluateUserState(userState);
-    for (const action of ranked) {
-      if (activateTrigger(action.name, { userState })) {
-        return;
+  function chooseSerialTrigger(available) {
+    if (!available.length) return null;
+    for (let i = 0; i < serialTriggerOrder.length; i += 1) {
+      const idx = (state.serialTriggerCursor + i) % serialTriggerOrder.length;
+      const name = serialTriggerOrder[idx];
+      if (available.includes(name)) {
+        state.serialTriggerCursor = (idx + 1) % serialTriggerOrder.length;
+        return name;
       }
     }
+    return null;
+  }
+
+  function chooseRandomTrigger(available) {
+    if (!available.length) return null;
+    const filtered = available.filter((name) => name !== state.lastTriggerName);
+    const pool = filtered.length ? filtered : available;
+    const idx = Math.floor(Math.random() * pool.length);
+    return pool[idx] || null;
+  }
+
+  function emergencyForceTrigger(reason) {
+    if (state.stage !== "popups") return false;
+    if (active.size >= 1) return false;
+    const userState = currentUserState();
+    const guaranteed = [
+      "fakeMentorCount",
+      "phantomCompetitor",
+      "stressTimer",
+      "spatialTicking",
+      "confidenceBreaker",
+    ];
+    const candidates = shuffleList(guaranteed.filter((name) => triggerHandlers[name]));
+    const ok = tryActivateFromCandidates(candidates, userState, `emergency:${reason}`, 4200, true);
+    return ok;
+  }
+
+  function shuffleList(items) {
+    const arr = [...items];
+    for (let i = arr.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  function tryActivateFromCandidates(candidates, userState, reasonBase, timeoutMs, force = false) {
+    for (const name of candidates) {
+      const ok = activateTrigger(name, {
+        userState,
+        timeoutMs,
+        force,
+        reason: `${reasonBase}:${name}`,
+      });
+      if (ok) return true;
+    }
+    return false;
+  }
+
+  async function requestTriggerFromAI(eventType, extra) {
+    if (disableStressMode) return false;
+    if (state.stage !== "popups") return false;
+    if (!testQuestions.length) return false;
+    if (active.size >= 1) {
+      state.queuedTriggerRequest = { eventType, at: Date.now() };
+      return false;
+    }
+
+    const now = Date.now();
+    if (state.aiDecisionInFlight) return false;
+    if (now - state.lastAIDecisionAt < AI_DECISION_MIN_GAP_MS) return false;
+
+    const userState = currentUserState();
+    const available = getTriggerNames().filter((name) => canActivateTrigger(name, { userState }).ok);
+
+    // Keepalive path: do not wait on AI when no trigger is active.
+    // This guarantees continuous trigger presence; AI remains primary for all other events.
+    if (eventType === "ensure_active" && available.length) {
+      const randomCandidates = shuffleList(available);
+      const randomActivated = tryActivateFromCandidates(
+        randomCandidates,
+        userState,
+        "keepalive-random:ensure_active",
+        0,
+        false
+      );
+      if (randomActivated) return true;
+
+      const serialFallback = chooseSerialTrigger(available);
+      if (serialFallback) {
+        const serialActivated = tryActivateFromCandidates(
+          [serialFallback, ...available.filter((name) => name !== serialFallback)],
+          userState,
+          "keepalive-serial:ensure_active",
+          0,
+          false
+        );
+        if (serialActivated) return true;
+      }
+    }
+
+    if (!available.length) {
+      // Ensure the test never goes silent for too long: force one random trigger when all are cooling down.
+      if (eventType === "ensure_active") {
+        const all = getTriggerNames().filter((name) => !active.has(name));
+        const forcedCandidates = shuffleList(all);
+        return tryActivateFromCandidates(
+          forcedCandidates,
+          userState,
+          "force-random:ensure_active",
+          4200,
+          true
+        );
+      }
+      return false;
+    }
+
+    state.aiDecisionInFlight = true;
+    state.lastAIDecisionAt = now;
+    try {
+      const payload = {
+        event_type: eventType,
+        user_state: {
+          time_on_question_ms: Math.floor(userState.timeOnQuestionMs || 0),
+          idle_ms: Math.floor(userState.idleMs || 0),
+          answer_change_count: Number(userState.answerChangeCount || 0),
+          answer_latency_ms: Number.isFinite(userState.answerLatencyMs) ? Math.floor(userState.answerLatencyMs) : null,
+          time_remaining_ms: Math.floor(userState.timeRemainingMs || 0),
+          hover_intent_on_option: Boolean(userState.hoverIntentOnOption),
+          is_submitting_answer: Boolean(userState.isSubmittingAnswer),
+          question_difficulty: String(userState.questionDifficulty || ""),
+        },
+        metrics: {
+          wrong_answers_count: state.wrongAnswersCount,
+          total_submissions: state.totalSubmissions,
+          correct_streak: state.correctStreak,
+        },
+        available_triggers: available,
+        recent_triggers: state.recentTriggerNames.slice(-8),
+        followup_answers: state.followupAnswers.slice(-8),
+        extra: extra || {},
+      };
+
+      const timeoutMsForDecision = eventType === "enter_popups" ? AI_DECISION_TIMEOUT_FAST_MS : AI_DECISION_TIMEOUT_MS;
+      const decision = await postJSON(AI_TRIGGER_ENDPOINT, payload, { timeoutMs: timeoutMsForDecision });
+      const triggerName = String(decision?.trigger_name || "").trim();
+      const timeoutMs = Number(decision?.timeout_ms || 0);
+
+      if (triggerName && available.includes(triggerName)) {
+        const aiFirst = [triggerName, ...available.filter((name) => name !== triggerName)];
+        const aiActivated = tryActivateFromCandidates(
+          aiFirst,
+          userState,
+          `ai:${eventType}`,
+          timeoutMs,
+          false
+        );
+        if (aiActivated) return true;
+      }
+    } catch (err) {
+      debugLog("ai_trigger_error", err?.message || String(err));
+    } finally {
+      state.aiDecisionInFlight = false;
+    }
+
+    // Priority after AI: random trigger -> event fallback -> serial fallback.
+    const randomCandidates = shuffleList(available);
+    const randomActivated = tryActivateFromCandidates(
+      randomCandidates,
+      userState,
+      `random:${eventType}`,
+      0,
+      false
+    );
+    if (randomActivated) {
+      return true;
+    }
+
+    const fallback = chooseFallbackTrigger(eventType, userState, available);
+    if (fallback) {
+      const fallbackActivated = tryActivateFromCandidates(
+        [fallback, ...available.filter((name) => name !== fallback)],
+        userState,
+        `fallback:${eventType}`,
+        0,
+        false
+      );
+      if (fallbackActivated) return true;
+    }
+
+    const serialFallback = chooseSerialTrigger(available);
+    if (serialFallback) {
+      return tryActivateFromCandidates(
+        [serialFallback, ...available.filter((name) => name !== serialFallback)],
+        userState,
+        `serial:${eventType}`,
+        0,
+        false
+      );
+    }
+    return false;
   }
 
   function evaluateUserState(userState) {
@@ -2132,6 +2527,10 @@ const StressTriggers = (() => {
     state.lastAnswerLatencyMs = null;
     state.hoverIntentOnOption = false;
     state.hoverOptionEl = null;
+    requestTriggerFromAI("question_loaded", {
+      question_id: state.currentQuestionId,
+      difficulty: state.questionDifficulty,
+    });
   }
 
   function onOptionChange(questionId, prevValue, nextValue) {
@@ -2143,12 +2542,22 @@ const StressTriggers = (() => {
       state.lastAnswerLatencyMs = Date.now() - state.questionStartedAt;
     }
     markInteraction("click");
+    requestTriggerFromAI("answer_changed", {
+      question_id: questionId,
+      previous_value: prevValue || "",
+      next_value: nextValue || "",
+    });
   }
 
   function onOptionHover(optionEl) {
     state.hoverIntentOnOption = true;
     state.hoverOptionEl = optionEl || null;
     markInteraction("pointer");
+    if (state.questionStartedAt && Date.now() - state.questionStartedAt > 7000) {
+      requestTriggerFromAI("hover_hesitation", {
+        question_id: state.currentQuestionId,
+      });
+    }
   }
 
   function beginExamTimer() {
@@ -2157,12 +2566,65 @@ const StressTriggers = (() => {
     }
   }
 
+  function onPopupsEntered() {
+    // Reset gate timers so the very first trigger is attempted immediately.
+    state.lastAIDecisionAt = 0;
+    state.lastEnsureActiveAt = 0;
+    if (!testQuestions.length) return;
+
+    requestTriggerFromAI("enter_popups", {
+      question_id: state.currentQuestionId,
+      difficulty: state.questionDifficulty,
+      immediate: true,
+    });
+
+    // Hard safety net: if nothing appears quickly, force one visible trigger.
+    setTimeout(() => {
+      if (state.stage !== "popups") return;
+      if (active.size >= 1) return;
+      emergencyForceTrigger("enter_popups");
+    }, 1100);
+  }
+
+  function getFollowupAnswers() {
+    return (state.followupAnswers || []).map((item) => ({ ...item }));
+  }
+
   async function beforeSubmitDelay() {
     state.isSubmittingAnswer = true;
+    requestTriggerFromAI("submit_attempt", {
+      question_id: state.currentQuestionId,
+    });
+    const remaining = timeRemainingMs();
+    if (remaining < 5 * 60 * 1000) {
+      requestTriggerFromAI("time_pressure", { time_remaining_ms: remaining });
+    }
   }
 
   function afterSubmit() {
     state.isSubmittingAnswer = false;
+  }
+
+  function noteAnswerOutcome(correct, hasAnswerKey) {
+    state.totalSubmissions += 1;
+    if (Math.random() < POST_ANSWER_RANDOM_TRIGGER_PROB) {
+      requestTriggerFromAI("post_answer_random", {
+        correct,
+        has_answer_key: hasAnswerKey,
+        question_id: state.currentQuestionId,
+      });
+    }
+    if (!hasAnswerKey) return;
+    if (correct) {
+      state.correctStreak += 1;
+      return;
+    }
+    state.correctStreak = 0;
+    state.wrongAnswersCount += 1;
+    requestTriggerFromAI("wrong_answer", {
+      wrong_answers_count: state.wrongAnswersCount,
+      question_id: state.currentQuestionId,
+    });
   }
 
   function onReset() {
@@ -2171,6 +2633,16 @@ const StressTriggers = (() => {
     state.currentQuestionId = "";
     state.answerChangesByQuestion = {};
     state.followupAnswers = [];
+    state.wrongAnswersCount = 0;
+    state.totalSubmissions = 0;
+    state.correctStreak = 0;
+    state.aiDecisionInFlight = false;
+    state.lastAIDecisionAt = 0;
+    state.recentTriggerNames = [];
+    state.serialTriggerCursor = 0;
+    state.queuedTriggerRequest = null;
+    state.lastLongHesitationTriggerAt = 0;
+    state.lastEnsureActiveAt = 0;
     state.lastAnswerLatencyMs = null;
     state.isSubmittingAnswer = false;
     deactivateAllTriggers();
@@ -2245,10 +2717,50 @@ const StressTriggers = (() => {
 
   function attachGlobalListeners() {
     ["click", "keydown", "scroll", "pointerdown"].forEach((eventName) => {
-      window.addEventListener(eventName, () => markInteraction(eventName), { passive: true });
+      window.addEventListener(eventName, () => {
+        const idleBefore = Date.now() - state.lastInteractionAt;
+        markInteraction(eventName);
+        if ((eventName === "click" || eventName === "keydown") && idleBefore > 9000) {
+          requestTriggerFromAI("idle_resumed", { idle_before_ms: idleBefore });
+        }
+      }, { passive: true });
     });
-    if (!autoEvaluateTimer) {
-      autoEvaluateTimer = setInterval(autoEvaluate, 1400);
+
+    if (!passiveMonitorTimer) {
+      passiveMonitorTimer = setInterval(() => {
+        if (state.stage !== "popups") return;
+        if (active.size >= 1) return;
+
+        const now = Date.now();
+        const userState = currentUserState();
+        const timeOnQuestion = Number(userState.timeOnQuestionMs || 0);
+        const idleMs = Number(userState.idleMs || 0);
+        const tooLong = Math.max(timeOnQuestion, idleMs) >= LONG_HESITATION_THRESHOLD_MS;
+        const waitGap = now - state.lastLongHesitationTriggerAt >= LONG_HESITATION_REPEAT_GAP_MS;
+        if (tooLong && waitGap) {
+          state.lastLongHesitationTriggerAt = now;
+          requestTriggerFromAI("long_hesitation", {
+            time_on_question_ms: timeOnQuestion,
+            idle_ms: idleMs,
+          });
+          return;
+        }
+
+        const ensureGap = now - state.lastEnsureActiveAt >= KEEPALIVE_GAP_MS;
+        if (ensureGap) {
+          state.lastEnsureActiveAt = now;
+          requestTriggerFromAI("ensure_active", {
+            time_on_question_ms: timeOnQuestion,
+            idle_ms: idleMs,
+          });
+        }
+
+        // Absolute watchdog: never let the UI stay trigger-idle for long.
+        const idleSince = state.lastTriggerEndedAt || state.lastAIDecisionAt || state.lastEnsureActiveAt || now;
+        if (now - idleSince > 3200 && active.size === 0) {
+          emergencyForceTrigger("watchdog");
+        }
+      }, 2200);
     }
   }
 
@@ -2264,13 +2776,16 @@ const StressTriggers = (() => {
     onOptionChange,
     onOptionHover,
     beginExamTimer,
+    onPopupsEntered,
     beforeSubmitDelay,
     afterSubmit,
+    noteAnswerOutcome,
     onReset,
     attachGlobalListeners,
     mountDevPanel,
     getTriggerNames,
     recordFollowupAnswer,
+    getFollowupAnswers,
   };
 })();
 
@@ -2589,7 +3104,6 @@ async function loadTestQuestions() {
     setTestHint("");
     scheduleMutationsForQuestions();
     renderTestQuestion();
-    StressTriggers.beginExamTimer();
   } catch (err) {
     testQuestions = cloneClientFallbackQuestions();
     testQuestionIndex = 0;
@@ -2686,12 +3200,7 @@ async function submitCurrentQuestion() {
       }
       answeredMap[q.question_id] = { selected: value, correct };
       updateScoreMeta();
-      if (hasAnswerKey && !correct) {
-        StressTriggers.activateTrigger("confidenceBreaker", {
-          force: true,
-          reason: "wrong-answer",
-        });
-      }
+      StressTriggers.noteAnswerOutcome(correct, hasAnswerKey);
       setTestHint(correct ? "Correct ✅" : "Saved. (Either incorrect or no answer key provided.)");
       return;
     }
@@ -2714,12 +3223,7 @@ async function submitCurrentQuestion() {
     }
     answeredMap[q.question_id] = { selected: picked, correct };
     updateScoreMeta();
-    if (hasAnswerKey && !correct) {
-      StressTriggers.activateTrigger("confidenceBreaker", {
-        force: true,
-        reason: "wrong-answer",
-      });
-    }
+    StressTriggers.noteAnswerOutcome(correct, hasAnswerKey);
     setTestHint(correct ? "Correct ✅" : "Saved. (Either incorrect or no answer key provided.)");
   } finally {
     StressTriggers.afterSubmit();
@@ -2853,7 +3357,7 @@ async function skipRemainingQuestions() {
 }
 
 async function handleCompletion() {
-  showStage("loading", "Designing your focus pulses…");
+  showStage("loading", "The devil is designing your pressure test…");
   try {
     const data = await postJSON(`/session/${sessionId}/start-simulation`, {});
     log("start_simulation", data);
@@ -2863,7 +3367,15 @@ async function handleCompletion() {
     popupSummary.textContent = err.message;
   }
   await loadTestQuestions();
+  await buildDevilBriefPage();
+  showStage("devil");
+}
+
+function acceptDevilChallenge() {
+  if (devilHint) devilHint.textContent = "Challenge accepted. Entering test arena...";
+  StressTriggers.beginExamTimer();
   showStage("popups");
+  StressTriggers.onPopupsEntered();
 }
 
 // HUD ----------------------------------------------------------------------
@@ -2901,6 +3413,7 @@ btnAnswer?.addEventListener("click", submitAnswer);
 btnSkip?.addEventListener("click", skipRemainingQuestions);
 btnRestart?.addEventListener("click", resetFlow);
 btnReset?.addEventListener("click", resetFlow);
+btnAcceptChallenge?.addEventListener("click", acceptDevilChallenge);
 btnLogout?.addEventListener("click", () => {
   window.StressDostAuth?.clearUser?.();
   window.location.href = "/login";

@@ -1,8 +1,10 @@
 """Generate stress popups via GPT - Sharp, Short, Cutting."""
 from __future__ import annotations
 
+import ast
 import json
 import logging
+import re
 
 from pydantic import ValidationError
 
@@ -19,6 +21,69 @@ FALLBACK_TEMPLATES = {
     "motivation": "Dreams don't wait. Neither do results.",
     "distraction": "Phone won. You lost. Again.",
 }
+
+
+def _to_text(value) -> str:
+    if isinstance(value, str):
+        text = value
+    elif isinstance(value, (list, tuple, set)):
+        for item in value:
+            text = _to_text(item)
+            if text:
+                return text
+        return ""
+    elif isinstance(value, dict):
+        for key in ("name", "value", "text", "label"):
+            text = _to_text(value.get(key))
+            if text:
+                return text
+        return ""
+    elif value is None:
+        return ""
+    else:
+        text = str(value)
+
+    text = " ".join(text.strip().split())
+    if not text:
+        return ""
+
+    # Recover from accidentally stringified lists like "['Rahul']".
+    if text.startswith("[") and text.endswith("]"):
+        for parser in (json.loads, ast.literal_eval):
+            try:
+                parsed = parser(text)
+                parsed_text = _to_text(parsed)
+                if parsed_text:
+                    return parsed_text
+            except Exception:
+                continue
+
+    return text
+
+
+def _preferred_friend_name(profile_summary: dict) -> str:
+    for key in ("friend", "rival"):
+        name = _to_text(profile_summary.get(key))
+        if name and name.lower() not in {"friend", "friends", "name", "unknown"}:
+            return name
+    return ""
+
+
+def _normalize_popup_message(raw_message, friend_name: str) -> str:
+    msg = _to_text(raw_message)
+    if not msg:
+        return ""
+
+    # Turn bracket placeholders like [Rahul] into plain text.
+    msg = re.sub(r"\[\s*([^\[\]]+?)\s*\]", r"\1", msg)
+    msg = msg.replace("[", "").replace("]", "")
+
+    if friend_name:
+        msg = re.sub(r"\bfriends\b", friend_name, msg, count=1, flags=re.IGNORECASE)
+        msg = re.sub(r"\bfriend's\b", f"{friend_name}'s", msg, count=1, flags=re.IGNORECASE)
+        msg = re.sub(r"\bfriend\b", friend_name, msg, count=1, flags=re.IGNORECASE)
+
+    return " ".join(msg.split())
 
 
 def _fallback_sequence(emotion_signals: list[str] | None) -> list[str]:
@@ -110,7 +175,7 @@ PSYCHOLOGICAL TECHNIQUES
    - "You hate studying. Failure loves you back."
 
 3. COMPARISON STING
-   - "[Name] is solving. You're scrolling."
+    - "Rahul is solving. You're scrolling."
    - "They moved on. You're still stuck."
    - "Everyone's ahead. You know it."
 
@@ -140,7 +205,7 @@ PERSONALIZATION
 
 USE their exact details from student_profile:
 
-- If they mentioned a friend/person → Use the name: "[Rahul] finished. You?"
+- If they mentioned a friend/person → Use the exact plain name: "Rahul finished. You?"
 - If they mentioned an app → Use it: "Instagram won't get you marks."
 - If they mentioned weak subject → Attack it: "Physics doesn't care about your excuses."
 - If they mentioned family → Use them: "Dad's money. Your waste."
@@ -157,7 +222,7 @@ GOOD EXAMPLES
 "This test isn't hard. Your focus is."
 "They're not here… but they're winning."
 "You blame friends. Results blame you."
-"[Rahul]'s done. You're not."
+"Rahul's done. You're not."
 "Instagram again? Really?"
 "Can't focus? Or won't?"
 "Excuses ready. Marks aren't."
@@ -197,6 +262,7 @@ RULES
 8. MIX all 7 techniques across the popups
 9. ttl: 6000-10000
 10. NO duplicates
+11. Do NOT use square brackets around names or words.
 
 ALLOWED TYPES:
 distraction, self_doubt, panic, pressure, comparison, guilt, fear, system_warning
@@ -211,43 +277,43 @@ def _build_profile_summary(stress_profile: dict) -> dict:
     distractions = stress_profile.get("distractions", {})
     if distractions:
         if distractions.get("phone_app"):
-            summary["app"] = distractions["phone_app"]
+            summary["app"] = _to_text(distractions.get("phone_app"))
         if distractions.get("gaming_app"):
-            summary["game"] = distractions["gaming_app"]
+            summary["game"] = _to_text(distractions.get("gaming_app"))
         if distractions.get("gaming_time"):
-            summary["gaming_hours"] = distractions["gaming_time"]
+            summary["gaming_hours"] = _to_text(distractions.get("gaming_time"))
         if distractions.get("friend_name"):
-            summary["friend"] = distractions["friend_name"]
+            summary["friend"] = _to_text(distractions.get("friend_name"))
     
     # Academic
     academic = stress_profile.get("academic_confidence", {})
     if academic:
         if academic.get("weak_subject"):
-            summary["weak_subject"] = academic["weak_subject"]
+            summary["weak_subject"] = _to_text(academic.get("weak_subject"))
         if academic.get("last_test_experience"):
-            summary["last_test"] = academic["last_test_experience"]
+            summary["last_test"] = _to_text(academic.get("last_test_experience"))
     
     # Time pressure
     time_pressure = stress_profile.get("time_pressure", {})
     if time_pressure:
         if time_pressure.get("exam_time_left"):
-            summary["days_left"] = time_pressure["exam_time_left"]
+            summary["days_left"] = _to_text(time_pressure.get("exam_time_left"))
         if time_pressure.get("study_hours_per_day"):
-            summary["study_hours"] = time_pressure["study_hours_per_day"]
+            summary["study_hours"] = _to_text(time_pressure.get("study_hours_per_day"))
     
     # Social comparison
     social = stress_profile.get("social_comparison", {})
     if social:
         if social.get("comparison_person"):
-            summary["rival"] = social["comparison_person"]
+            summary["rival"] = _to_text(social.get("comparison_person"))
     
     # Family pressure
     family = stress_profile.get("family_pressure", {})
     if family:
         if family.get("family_member"):
-            summary["family"] = family["family_member"]
+            summary["family"] = _to_text(family.get("family_member"))
         if family.get("expectation_type"):
-            summary["expectation"] = family["expectation_type"]
+            summary["expectation"] = _to_text(family.get("expectation_type"))
     
     return summary
 
@@ -281,6 +347,7 @@ def generate_popups(stress_profile: dict, emotion_signals: list[str] | None = No
         return []
 
     profile_summary = _build_profile_summary(stress_profile)
+    friend_name = _preferred_friend_name(profile_summary)
     user_words = _extract_user_words(stress_profile)
     
     payload = {
@@ -314,7 +381,7 @@ def generate_popups(stress_profile: dict, emotion_signals: list[str] | None = No
                 if not isinstance(popup, dict):
                     continue
                 
-                msg = (popup.get("message") or "").strip()
+                msg = _normalize_popup_message(popup.get("message"), friend_name)
 
                 # Enforce one-line, short messages
                 if "\n" in msg:

@@ -160,6 +160,10 @@
       <div id="summaryBox" class="summary-card">No summary yet.</div>
     </div>
     <div class="hud-section">
+      <div class="section-title">A/B Answer History</div>
+      <div id="binaryHistory" class="binary-history">No A/B answers yet.</div>
+    </div>
+    <div class="hud-section">
       <div class="section-title">Trace Log</div>
       <pre id="logBox"></pre>
     </div>
@@ -170,6 +174,16 @@
   </aside>
 
   <div id="popupOverlay" class="popup-overlay"></div>
+  <div id="binaryOverlay" class="binary-overlay" aria-hidden="true">
+    <div class="binary-card">
+      <p class="eyebrow">Quick Split</p>
+      <div id="binaryQuestion" class="binary-question">A/B prompts will appear here.</div>
+      <div class="binary-actions">
+        <button id="btnBinaryA" class="btn ghost binary-btn" type="button">Option A</button>
+        <button id="btnBinaryB" class="btn primary binary-btn" type="button">Option B</button>
+      </div>
+    </div>
+  </div>
 
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script src="/app.js"></script>

@@ -16,6 +16,8 @@ def create_session(raw_initial_text: str) -> Session:
             "domain_question_count": {},
             "clarifier_used": [],
             "current_question": None,
+            "current_binary_question": None,
+            "binary_answers": [],
             "emotion_signals": [],
             "combo_history": [],
         },

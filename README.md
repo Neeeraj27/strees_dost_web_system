@@ -32,6 +32,7 @@ A Flask + Socket.IO app that builds a student stress profile, asks guided questi
 - Stage 1: enter an initial vent and click “Launch Session” (`POST /session/start`)
 - Stage 2: answer prompts; short answers may trigger a clarifier (`/session/<id>/next-question`, `/answer`)
 - Completion: app calls `/session/<id>/start-simulation`, shows popups, then loads practice questions
+- Post-completion A/B loop: once the popup/question screen is active, a center-screen binary prompt appears every 20 seconds; answers are stored in `session.meta["binary_answers"]`
 - HUD shows session ID, domains, trace log, popup console
 
 ## API Quickstart (headless)
@@ -52,9 +53,18 @@ curl -X POST http://localhost:5002/session/<session_id>/answer \
 # Trigger popup simulation after completion
 curl -X POST http://localhost:5002/session/<session_id>/start-simulation
 
+# Generate one summary/query-driven A/B prompt after completion
+curl -X POST http://localhost:5002/session/<session_id>/binary-question
+
+# Store the user's A/B choice
+curl -X POST http://localhost:5002/session/<session_id>/binary-answer \
+  -H "Content-Type: application/json" \
+  -d '{"selected":"A"}'
+
 # Debug/status
 curl http://localhost:5002/session/<session_id>/status
 curl http://localhost:5002/session/<session_id>/debug
+curl http://localhost:5002/session/<session_id>/summary
 ```
 
 ## Practice Question Service (`app/api/question_routes.py`)
@@ -70,6 +80,19 @@ curl http://localhost:5002/session/<session_id>/debug
 - Join room: emit `join_session` with `{session_id:"<id>"}`; popups arrive as `popup`
 - Popup generator lives in `app/services/popup_generator.py`; simulation scheduled via `app/realtime/scheduler.py`
 - Sanity-check: `POST /session/<id>/test-popup`
+
+## Summary-Driven Binary Questions
+- Generator lives in `app/services/binary_question_generator.py`
+- `POST /session/<id>/binary-question` creates one A/B prompt from:
+  - raw initial query
+  - conversation history
+  - `session.meta["user_summary"]`
+  - previous binary questions/answers
+- `POST /session/<id>/binary-answer` stores the choice in `session.meta["binary_answers"]`
+- Frontend behavior:
+  - only runs after follow-ups end and the completed screen is visible
+  - shows a center overlay every 20 seconds
+  - skips generation if a previous A/B prompt is still open
 
 ## Key Files
 - App factory: `app/__init__.py`; config defaults: `app/config.py`

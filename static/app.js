@@ -10,8 +10,13 @@ const stageEls = {
 const logBox = $("logBox");
 const summaryBox = $("summaryBox");
 const summaryMain = $("summaryMain");
+const binaryHistory = $("binaryHistory");
 const popupConsole = $("popupConsole");
 const popupOverlay = $("popupOverlay");
+const binaryOverlay = $("binaryOverlay");
+const binaryQuestionEl = $("binaryQuestion");
+const btnBinaryA = $("btnBinaryA");
+const btnBinaryB = $("btnBinaryB");
 const popupQueue = [];
 let popupActive = false;
 let popupTimer = null;
@@ -63,6 +68,9 @@ let mediaStream = null;
 let audioChunks = [];
 let recordedAudioBlob = null;
 let recordingMimeType = "audio/webm";
+let binaryPromptTimer = null;
+let binaryPromptVisible = false;
+let binaryPromptBusy = false;
 let testQuestions = [];
 let testQuestionIndex = 0;
 let selectedOptions = {};
@@ -133,6 +141,29 @@ function setSummary(summary) {
   });
 }
 
+function setBinaryHistory(items) {
+  if (!binaryHistory) return;
+  const rows = Array.isArray(items) ? items.filter(Boolean) : [];
+  if (!rows.length) {
+    binaryHistory.textContent = "No A/B answers yet.";
+    return;
+  }
+  binaryHistory.innerHTML = rows
+    .map((item, index) => {
+      const selected = String(item.selected || "").toUpperCase();
+      const selectedText =
+        selected === "A" ? item.a || item.selected_text : selected === "B" ? item.b || item.selected_text : item.selected_text;
+      return `
+        <div class="binary-history-row">
+          <div class="binary-history-index">#${index + 1}</div>
+          <div class="binary-history-question">${escapeHTML(item.question || "")}</div>
+          <div class="binary-history-answer">${escapeHTML(selected)}. ${escapeHTML(selectedText || "")}</div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
 async function postFormData(url, formData) {
   const res = await fetch(url, {
     method: "POST",
@@ -141,6 +172,76 @@ async function postFormData(url, formData) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || data.message || `HTTP ${res.status}`);
   return data;
+}
+
+function hideBinaryPrompt() {
+  if (!binaryOverlay) return;
+  binaryOverlay.classList.remove("active");
+  binaryOverlay.setAttribute("aria-hidden", "true");
+  binaryPromptVisible = false;
+}
+
+function renderBinaryPrompt(data) {
+  if (!binaryOverlay || !binaryQuestionEl || !btnBinaryA || !btnBinaryB) return;
+  binaryQuestionEl.textContent = data.question || "Choose one.";
+  btnBinaryA.textContent = `A. ${data.a || "Option A"}`;
+  btnBinaryB.textContent = `B. ${data.b || "Option B"}`;
+  btnBinaryA.disabled = false;
+  btnBinaryB.disabled = false;
+  binaryOverlay.classList.add("active");
+  binaryOverlay.setAttribute("aria-hidden", "false");
+  binaryPromptVisible = true;
+}
+
+function stopBinaryPromptLoop() {
+  if (binaryPromptTimer) {
+    clearInterval(binaryPromptTimer);
+    binaryPromptTimer = null;
+  }
+  hideBinaryPrompt();
+}
+
+async function fetchBinaryPrompt() {
+  if (!sessionId || binaryPromptVisible || binaryPromptBusy) return;
+  if (!stageEls.popups?.classList.contains("active")) return;
+  binaryPromptBusy = true;
+  try {
+    const data = await postJSON(`/session/${sessionId}/binary-question`, {});
+    log("binary_question", data);
+    if (data && data.question && data.a && data.b) {
+      renderBinaryPrompt(data);
+    }
+  } catch (err) {
+    log("binary_question_error", err.message || String(err));
+  } finally {
+    binaryPromptBusy = false;
+  }
+}
+
+function startBinaryPromptLoop() {
+  stopBinaryPromptLoop();
+  binaryPromptTimer = setInterval(fetchBinaryPrompt, 20000);
+}
+
+async function submitBinaryPrompt(choice) {
+  if (!sessionId || !binaryPromptVisible) return;
+  btnBinaryA.disabled = true;
+  btnBinaryB.disabled = true;
+  try {
+    const data = await postJSON(`/session/${sessionId}/binary-answer`, { selected: choice });
+    log("binary_answer", data);
+    if (data && data.stored) {
+      const existing = Array.isArray(window.__binaryAnswers) ? window.__binaryAnswers.slice() : [];
+      existing.push(data.stored);
+      window.__binaryAnswers = existing;
+      setBinaryHistory(existing);
+    }
+    hideBinaryPrompt();
+  } catch (err) {
+    log("binary_answer_error", err.message || String(err));
+    btnBinaryA.disabled = false;
+    btnBinaryB.disabled = false;
+  }
 }
 
 function showStage(name, message) {
@@ -232,6 +333,7 @@ function resetFlow() {
   }
   mediaRecorder = null;
   audioChunks = [];
+  stopBinaryPromptLoop();
   setRecordButtonState();
   setHint("");
   setIntroHint("");
@@ -252,6 +354,8 @@ function resetFlow() {
   popupSummary.textContent = "We're releasing your personalized pulses now. Watch the center top.";
   popupOverlay.innerHTML = "";
   setSummary(null);
+  window.__binaryAnswers = [];
+  setBinaryHistory([]);
   log("reset_flow");
   setSessionUI(null, null);
   showStage("intro");
@@ -827,12 +931,21 @@ async function handleCompletion() {
     } catch (summaryErr) {
       log("summary_error", summaryErr.message || String(summaryErr));
     }
+    try {
+      const debugData = await getJSON(`/session/${sessionId}/debug`);
+      const history = (debugData.meta && debugData.meta.binary_answers) || [];
+      window.__binaryAnswers = Array.isArray(history) ? history : [];
+      setBinaryHistory(window.__binaryAnswers);
+    } catch (historyErr) {
+      log("binary_history_error", historyErr.message || String(historyErr));
+    }
   } catch (err) {
     log("simulation_error", err.message);
     popupSummary.textContent = err.message;
   }
   await loadTestQuestions();
   showStage("popups");
+  startBinaryPromptLoop();
 }
 
 // HUD ----------------------------------------------------------------------
@@ -866,6 +979,8 @@ btnPrevQuestion?.addEventListener("click", () => gotoQuestion(-1));
 btnNextQuestion?.addEventListener("click", () => gotoQuestion(1));
 btnReloadQuestions?.addEventListener("click", () => loadTestQuestions());
 btnSubmitQuestion?.addEventListener("click", submitCurrentQuestion);
+btnBinaryA?.addEventListener("click", () => submitBinaryPrompt("A"));
+btnBinaryB?.addEventListener("click", () => submitBinaryPrompt("B"));
 
 // Live suggestions for initial text ---------------------------------------
 function setSuggestions(items) {

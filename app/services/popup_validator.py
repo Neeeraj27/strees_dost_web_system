@@ -26,18 +26,27 @@ def _has_family(profile: dict) -> bool:
     return any(tag in member for tag in FAMILY_TAGS)
 
 
+def _extract_names(value) -> list[str]:
+    if isinstance(value, str):
+        parts = re.split(r",|/|\band\b|\&", value, flags=re.IGNORECASE)
+        return [part.strip() for part in parts if part and part.strip()]
+    if isinstance(value, (list, tuple, set)):
+        out: list[str] = []
+        for item in value:
+            out.extend(_extract_names(item))
+        return out
+    return []
+
+
 def _allowed_friend_names(profile: dict) -> set[str]:
     names: set[str] = set()
     distractions = profile.get("distractions") or {}
     comparison = profile.get("social_comparison") or {}
 
-    friend_name = (distractions.get("friend_name") or "").strip()
-    comparison_person = (comparison.get("comparison_person") or "").strip()
-
-    if friend_name:
-        names.add(friend_name.lower())
-    if comparison_person:
-        names.add(comparison_person.lower())
+    for token in _extract_names(distractions.get("friend_name")):
+        names.add(token.lower())
+    for token in _extract_names(comparison.get("comparison_person")):
+        names.add(token.lower())
 
     names.add("friend")
     names.add("friends")

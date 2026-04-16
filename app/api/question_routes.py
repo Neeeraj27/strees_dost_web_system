@@ -6,6 +6,7 @@ import logging
 import os
 import random
 import csv
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -13,6 +14,12 @@ from typing import Dict, List, Optional
 import requests
 from flask import Blueprint, jsonify, request
 from flask_caching import Cache
+
+try:
+    import certifi
+    _CERTIFI_PATH = certifi.where()
+except ImportError:  # pragma: no cover
+    _CERTIFI_PATH = None
 
 from ..services.question_mutator import mutate_question
 
@@ -27,25 +34,154 @@ ACADZA_API_URL = os.getenv("ACADZA_API_URL", "https://api.acadza.in/question/det
 QUESTIONS_CSV_PATH = os.getenv("QUESTION_IDS_CSV", str(BASE_DIR / "data" / "question_ids.csv"))
 CACHE_TIMEOUT = 3600  # 1 hour
 
-ACADZA_HEADERS = {
-    "Accept": "application/json",
-    "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8,hi;q=0.7",
-    "Content-Type": "application/json",
-    "Origin": "https://www.acadza.com",
-    "Referer": "https://www.acadza.com/",
-    "Connection": "keep-alive",
-    "User-Agent": os.getenv(
-        "ACADZA_USER_AGENT",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
-    ),
-    # Defaults based on provided curl
-    "api-key": os.getenv("ACADZA_API_KEY", "postmanrulz"),
-    "course": os.getenv("ACADZA_COURSE", "undefined"),
-}
+def _build_acadza_headers() -> Dict:
+    """Build headers from latest env vars to avoid stale auth/course values."""
+    course = os.getenv("ACADZA_COURSE", "").strip()
+    auth = os.getenv("ACADZA_AUTH", "").strip()
+    apikey = os.getenv("ACADZA_API_KEY", "postmanrulz").strip()
 
-if os.getenv("ACADZA_AUTH") is not None:
-    ACADZA_HEADERS["Authorization"] = os.getenv("ACADZA_AUTH")
+    if not course:
+        logger.warning("ACADZA_COURSE is not set; defaulting to 'JEE'.")
+        course = "JEE"
+    if not auth:
+        logger.warning("ACADZA_AUTH is not set; requests may return 401.")
+
+    headers: Dict = {
+        "Accept": "application/json",
+        "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8,hi;q=0.7",
+        "Content-Type": "application/json",
+        "Origin": "https://www.acadza.com",
+        "Referer": "https://www.acadza.com/",
+        "Connection": "keep-alive",
+        "User-Agent": os.getenv(
+            "ACADZA_USER_AGENT",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+        ),
+        "api-key": apikey,
+        "course": course,
+    }
+    if auth:
+        headers["Authorization"] = auth
+    return headers
+
+
+ACADZA_HEADERS = _build_acadza_headers()
+
+
+def _local_fallback_questions(count: int = 7) -> List[Dict]:
+    """Return deterministic local questions when Acadza questions are unavailable."""
+    bank = [
+        {
+            "question_id": "fallback-1",
+            "question_type": "scq",
+            "subject": "Mathematics",
+            "chapter": "Algebra",
+            "difficulty": "Easy",
+            "level": "EASY",
+            "question_html": "<p>If 2x + 3 = 11, what is x?</p>",
+            "question_images": [],
+            "options": [
+                {"label": "A", "text": "2"},
+                {"label": "B", "text": "3"},
+                {"label": "C", "text": "4"},
+                {"label": "D", "text": "5"},
+            ],
+            "correct_answer": "C",
+            "solution_html": "<p>2x = 8, so x = 4.</p>",
+            "solution_images": [],
+            "metadata": {"fallback": True},
+        },
+        {
+            "question_id": "fallback-2",
+            "question_type": "scq",
+            "subject": "Physics",
+            "chapter": "Kinematics",
+            "difficulty": "Easy",
+            "level": "EASY",
+            "question_html": "<p>A body starts from rest and accelerates at 2 m/s<sup>2</sup>. Distance covered in 3 s is?</p>",
+            "question_images": [],
+            "options": [
+                {"label": "A", "text": "3 m"},
+                {"label": "B", "text": "6 m"},
+                {"label": "C", "text": "9 m"},
+                {"label": "D", "text": "12 m"},
+            ],
+            "correct_answer": "C",
+            "solution_html": "<p>s = 1/2 at<sup>2</sup> = 1/2 * 2 * 3<sup>2</sup> = 9 m.</p>",
+            "solution_images": [],
+            "metadata": {"fallback": True},
+        },
+        {
+            "question_id": "fallback-3",
+            "question_type": "integer",
+            "subject": "Chemistry",
+            "chapter": "Mole Concept",
+            "difficulty": "Easy",
+            "level": "EASY",
+            "question_html": "<p>How many atoms are present in 1 mole of a substance? (Enter integer part of coefficient x in x × 10<sup>23</sup>)</p>",
+            "question_images": [],
+            "integer_answer": 6,
+            "solution_html": "<p>Avogadro number is 6.022 × 10<sup>23</sup>.</p>",
+            "solution_images": [],
+            "metadata": {"fallback": True},
+        },
+        {
+            "question_id": "fallback-4",
+            "question_type": "scq",
+            "subject": "Mathematics",
+            "chapter": "Trigonometry",
+            "difficulty": "Medium",
+            "level": "MEDIUM",
+            "question_html": "<p>sin<sup>2</sup>theta + cos<sup>2</sup>theta equals:</p>",
+            "question_images": [],
+            "options": [
+                {"label": "A", "text": "0"},
+                {"label": "B", "text": "1"},
+                {"label": "C", "text": "2"},
+                {"label": "D", "text": "Depends on theta"},
+            ],
+            "correct_answer": "B",
+            "solution_html": "<p>Identity: sin<sup>2</sup>theta + cos<sup>2</sup>theta = 1.</p>",
+            "solution_images": [],
+            "metadata": {"fallback": True},
+        },
+        {
+            "question_id": "fallback-5",
+            "question_type": "scq",
+            "subject": "Physics",
+            "chapter": "Units and Dimensions",
+            "difficulty": "Easy",
+            "level": "EASY",
+            "question_html": "<p>The SI unit of force is:</p>",
+            "question_images": [],
+            "options": [
+                {"label": "A", "text": "Joule"},
+                {"label": "B", "text": "Watt"},
+                {"label": "C", "text": "Newton"},
+                {"label": "D", "text": "Pascal"},
+            ],
+            "correct_answer": "C",
+            "solution_html": "<p>Force = mass × acceleration, SI unit is Newton.</p>",
+            "solution_images": [],
+            "metadata": {"fallback": True},
+        },
+    ]
+
+    if count <= len(bank):
+        picked = bank[:count]
+    else:
+        picked = []
+        while len(picked) < count:
+            picked.extend(bank)
+        picked = picked[:count]
+
+    out: List[Dict] = []
+    for idx, q in enumerate(picked):
+        item = dict(q)
+        item["question_index"] = idx + 1
+        out.append(item)
+    return out
 
 
 # CSV loader ---------------------------------------------------------------
@@ -61,7 +197,14 @@ class QuestionIDLoader:
         try:
             with open(self.csv_path, "r", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
-                self.question_ids = [row["question_id"].strip() for row in reader if row.get("question_id")]
+                seen: set[str] = set()
+                ids: list[str] = []
+                for row in reader:
+                    qid = (row.get("question_id") or "").strip()
+                    if qid and qid not in seen:
+                        seen.add(qid)
+                        ids.append(qid)
+                self.question_ids = ids
             logger.info("Loaded %s question IDs from %s", len(self.question_ids), self.csv_path)
         except FileNotFoundError:
             logger.warning("Question ID CSV not found: %s", self.csv_path)
@@ -88,10 +231,11 @@ class AcadzaQuestionFetcher:
 
     def __init__(self, api_url: str, headers: Dict):
         self.api_url = api_url
-        self.headers = headers
+        self.headers = _build_acadza_headers()
         self.request_timeout = 10
         raw_verify = os.getenv("ACADZA_VERIFY", "true").strip().lower()
         self.verify_ssl = raw_verify not in {"0", "false", "no"}
+        self.cert_path = _CERTIFI_PATH if self.verify_ssl and _CERTIFI_PATH else self.verify_ssl
 
     def fetch_question(self, question_id: str) -> Optional[Dict]:
         try:
@@ -104,7 +248,7 @@ class AcadzaQuestionFetcher:
                 json=payload,
                 headers=headers,
                 timeout=self.request_timeout,
-                verify=self.verify_ssl,
+                verify=self.cert_path,
             )
 
             if response.status_code == 200:
@@ -126,10 +270,16 @@ class AcadzaQuestionFetcher:
 
     def fetch_multiple(self, question_ids: List[str]) -> List[Dict]:
         questions: list[Dict] = []
-        for qid in question_ids:
-            data = self.fetch_question(qid)
-            if data:
-                questions.append(data)
+        if not question_ids:
+            return questions
+
+        max_workers = min(6, len(question_ids))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_qid = {executor.submit(self.fetch_question, qid): qid for qid in question_ids}
+            for future in as_completed(future_to_qid):
+                data = future.result()
+                if data:
+                    questions.append(data)
         logger.info("Fetched %s/%s questions", len(questions), len(question_ids))
         return questions
 
@@ -262,22 +412,36 @@ class QuestionFormatter:
 
 # Routes -------------------------------------------------------------------
 @question_bp.route("/load-test-questions", methods=["GET"])
-@cache.cached(timeout=CACHE_TIMEOUT)
 def load_test_questions():
+    # Do not cache this route: fallback responses should not persist across retries.
     question_ids = question_loader.get_random_ids(count=20)
     if not question_ids:
-        return (
-            jsonify(
-                {
-                    "status": "error",
-                    "message": "No question IDs available",
-                    "questions": [],
-                }
-            ),
-            400,
+        fallback = _local_fallback_questions(count=7)
+        return jsonify(
+            {
+                "status": "success",
+                "message": "Using local fallback questions (no question IDs available)",
+                "questions": fallback,
+                "total_questions": len(fallback),
+                "fallback": True,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
         )
 
     raw_questions = acadza_fetcher.fetch_multiple(question_ids)
+    if not raw_questions:
+        fallback = _local_fallback_questions(count=7)
+        return jsonify(
+            {
+                "status": "success",
+                "message": "Using local fallback questions (Acadza returned no data)",
+                "questions": fallback,
+                "total_questions": len(fallback),
+                "fallback": True,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+        )
+
     formatted = [QuestionFormatter.format_question(q, idx) for idx, q in enumerate(raw_questions)]
 
     return jsonify(

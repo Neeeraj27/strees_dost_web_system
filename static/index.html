@@ -20,21 +20,33 @@
     </header>
 
     <main class="viewport">
-      <section class="stage active" id="stageIntro">
+      <section class="stage active" id="stageName">
         <div class="glass intro-card">
-          <h2>Drop every detail</h2>
-          <p>Your first dump anchors the entire journey. Type in everything that's weighing you down.</p>
+          <h2>Welcome to Stress Dost. Before we begin, what should I call you?</h2>
+          <p>This helps us personalize your experience.</p>
+          <input id="userName" type="text" placeholder="Type your name here..." />
+          <div class="row" id="nameStepRow">
+            <button id="btnNameNext" class="btn primary" type="button">Continue</button>
+          </div>
+
+          <div class="stage-hint" id="nameHint"></div>
+        </div>
+      </section>
+
+      <section class="stage" id="stageIntro">
+        <div class="glass intro-card">
+          <h2 id="storyPrompt">What's on your mind today?</h2>
           <label for="initialText" class="label">What's on your mind today?</label>
           <textarea id="initialText" rows="7" placeholder="Exams, friends, distractions, parental pressure, anything..."></textarea>
           <div class="row">
             <button id="btnRecord" class="btn ghost" type="button">Record Voice</button>
           </div>
-          <div class="suggestion-wrap" id="suggestionWrap" style="display:none;">
+          <div class="suggestion-wrap" id="suggestionWrap" hidden>
             <div class="suggestion-label">Suggestions</div>
             <div class="suggestion-list" id="suggestionList"></div>
           </div>
-          <div class="stage-hint" id="introHint"></div>
           <button id="btnStart" class="btn primary">Launch Session</button>
+          <div class="stage-hint" id="introHint"></div>
         </div>
       </section>
 
@@ -55,6 +67,50 @@
           <textarea id="answerInput" rows="4" placeholder="Type a quick, honest answer..."></textarea>
           <div class="row">
             <button id="btnAnswer" class="btn primary" disabled>Submit Answer</button>
+            <button id="btnSkip" class="btn ghost" hidden>Skip Remaining</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="stage" id="stageDevil">
+        <div class="glass devil-brief-card">
+          <div class="devil-hero">
+            <div class="devil-avatar" aria-hidden="true">😈</div>
+            <div>
+              <p class="eyebrow">Final Briefing</p>
+              <h2 id="devilTitle">The Devil Designed Your Test</h2>
+              <p class="devil-intro" id="devilIntro">
+                I have studied your responses and built a pressure test around your exact weak points.
+              </p>
+            </div>
+          </div>
+
+          <div class="devil-grid">
+            <article class="devil-panel">
+              <h3>Your Pressure Points</h3>
+              <ul id="devilProblems" class="devil-list"></ul>
+            </article>
+
+            <article class="devil-panel">
+              <h3>How I Built This Test</h3>
+              <ul id="devilDesign" class="devil-list"></ul>
+            </article>
+
+            <article class="devil-panel">
+              <h3>Your Test Blueprint</h3>
+              <div id="devilBlueprint" class="devil-blueprint"></div>
+            </article>
+
+            <article class="devil-panel">
+              <h3>Challenge Declaration</h3>
+              <p id="devilChallengeLine" class="devil-challenge-line">
+                Accept my challenge. I know you cannot beat me.
+              </p>
+              <div class="devil-cta-row">
+                <button id="btnAcceptChallenge" class="btn primary" type="button">Accept Challenge</button>
+              </div>
+              <div class="stage-hint" id="devilHint"></div>
+            </article>
           </div>
         </div>
       </section>
@@ -77,12 +133,17 @@
                 <div class="q-count" id="questionCounter">Questions —</div>
                 <div class="q-subject" id="questionSubject">—</div>
               </div>
-              <div class="mutate-badge pill subtle" id="mutateBadge" style="display:none;">Mutated</div>
+              <div class="pressure-indicators">
+                <div class="pill subtle pressure-pill" id="mentorsWatching">Mentors watching: —</div>
+                <div class="pill subtle pressure-pill" id="questionTimer">Time left: --:--</div>
+              </div>
+              <div class="mutate-badge pill subtle" id="mutateBadge">Mutated</div>
               <div class="test-actions">
                 <button id="btnReloadQuestions" class="btn ghost small">Reload set</button>
                 <button id="btnSubmitQuestion" class="btn primary small">Submit</button>
               </div>
             </div>
+            <div class="live-feed" id="competitorFeed">Live arena feed will appear here.</div>
             <div class="progress-wrap">
               <div class="progress-track">
                 <div class="progress-bar" id="questionProgress"></div>
@@ -185,7 +246,19 @@
     </div>
   </div>
 
+  <div id="submitConfirmModal" class="confirm-modal" hidden>
+    <div class="confirm-card">
+      <h3 id="confirmTitle">Lock your answer?</h3>
+      <p id="confirmMessage">This will save your answer for this question.</p>
+      <div class="confirm-actions">
+        <button id="btnConfirmCancel" class="btn ghost small" type="button">Cancel</button>
+        <button id="btnConfirmPrimary" class="btn primary small" type="button">Submit answer</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="/auth.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

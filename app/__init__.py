@@ -6,8 +6,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from .api.bollywood_routes import bp as bollywood_bp
 from .api.health_routes import bp as health_bp
 from .api.session_routes import bp as session_bp
+from .api.trigger_routes import bp as trigger_bp
 from .api.ui_routes import bp as ui_bp
 from .api.question_routes import init_question_service
 from .config import Config
@@ -26,6 +28,8 @@ def create_app():
     app.register_blueprint(ui_bp)
     app.register_blueprint(session_bp)
     app.register_blueprint(health_bp)
+    app.register_blueprint(bollywood_bp)
+    app.register_blueprint(trigger_bp)
     init_question_service(app)
 
     return app

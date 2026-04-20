@@ -1155,7 +1155,13 @@ def _personal_fallback(
         fresh = [q for q in candidates if _hash(q) not in asked_hashes]
         return (fresh if fresh else candidates)[:3]
 
-    if _has_any(["math", "physics", "chem", "chapter", "test", "exam", "mock", "blank", "focus", "concentrat", "padh", "study"]):
+    # Only trigger study/subject questions if both a subject/study keyword and a study context are present
+    subject_keywords = ["math", "physics", "chem", "chapter", "test", "exam", "mock", "blank"]
+    study_context_keywords = ["study", "studying", "work", "focus", "concentrat", "padh", "padha", "revision", "class", "homework", "assignment", "syllabus"]
+    if (
+        any(token in text_lower for token in subject_keywords)
+        and any(token in text_lower for token in study_context_keywords)
+    ):
         if is_hinglish:
             candidates = [
                 "Padhte waqt sabse pehle kya break hota hai: focus, confidence, ya pace?",

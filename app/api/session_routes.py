@@ -9,6 +9,7 @@ from flask import Blueprint, current_app, jsonify, request
 from ..db.repo import create_session, get_session, save_session
 from ..extensions import socketio
 from ..realtime.scheduler import start_popup_simulation
+from ..services.binary_question_generator import generate_binary_question
 from ..services.combo_answer_parser import PARSERS as COMBO_PARSERS
 from ..services.combo_question_generator import generate_combo_question
 from ..services.combo_specs import COMBO_SPECS
@@ -799,6 +800,70 @@ def session_summary(session_id: str):
             "user_summary": meta.get("user_summary") or {},
         }
     )
+
+
+@bp.post("/<session_id>/binary-question")
+def binary_question(session_id: str):
+    session = get_session(session_id)
+    if not session or session.status != "completed":
+        return jsonify({"error": "session not completed"}), 400
+
+    meta = dict(session.meta or {})
+    current_binary = meta.get("current_binary_question") or {}
+    if current_binary.get("question") and current_binary.get("a") and current_binary.get("b"):
+        return jsonify({"ok": True, "pending": True, **current_binary})
+
+    previous_answers = [item for item in (meta.get("binary_answers") or []) if isinstance(item, dict)]
+    previous_questions = [str(item.get("question") or "") for item in previous_answers if item.get("question")]
+    summary = meta.get("user_summary") or {}
+
+    question_data = generate_binary_question(
+        session.raw_initial_text or "",
+        user_summary=summary,
+        conversation_history=session.history or [],
+        previous_questions=previous_questions,
+        previous_answers=previous_answers,
+    )
+
+    meta["current_binary_question"] = question_data
+    session.meta = meta
+    save_session(session)
+    return jsonify({"ok": True, "pending": False, **question_data})
+
+
+@bp.post("/<session_id>/binary-answer")
+def binary_answer(session_id: str):
+    session = get_session(session_id)
+    if not session or session.status != "completed":
+        return jsonify({"error": "session not completed"}), 400
+
+    meta = dict(session.meta or {})
+    current_binary = meta.get("current_binary_question") or {}
+    if not current_binary.get("question"):
+        return jsonify({"error": "no active binary question"}), 400
+
+    body = request.get_json(force=True, silent=True) or {}
+    selected = str(body.get("selected") or "").strip().upper()
+    if selected not in {"A", "B"}:
+        return jsonify({"error": "selected must be 'A' or 'B'"}), 400
+
+    selected_text = current_binary.get("a") if selected == "A" else current_binary.get("b")
+    answers = [item for item in (meta.get("binary_answers") or []) if isinstance(item, dict)]
+    stored = {
+        "question": current_binary.get("question"),
+        "a": current_binary.get("a"),
+        "b": current_binary.get("b"),
+        "selected": selected,
+        "selected_text": selected_text,
+    }
+    answers.append(stored)
+    meta["binary_answers"] = answers
+    meta["current_binary_question"] = None
+    session.meta = meta
+    save_session(session)
+    return jsonify({"ok": True, "stored": stored, "answers_count": len(answers)})
+
+
 @bp.post("/<session_id>/complete")
 def complete_session_early(session_id: str):
     """Mark session as completed early when user skips remaining questions."""

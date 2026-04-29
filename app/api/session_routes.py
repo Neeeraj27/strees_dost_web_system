@@ -9,6 +9,7 @@ from flask import Blueprint, current_app, jsonify, request
 from ..db.repo import create_session, get_session, save_session
 from ..extensions import socketio
 from ..realtime.scheduler import start_popup_simulation
+from ..services.academic_topic_extractor import extract_academic_topics
 from ..services.binary_question_generator import generate_binary_question
 from ..services.combo_answer_parser import PARSERS as COMBO_PARSERS
 from ..services.combo_question_generator import generate_combo_question
@@ -798,6 +799,31 @@ def session_summary(session_id: str):
             "session_id": str(session.id),
             "status": session.status,
             "user_summary": meta.get("user_summary") or {},
+        }
+    )
+
+
+@bp.get("/<session_id>/academic-topics")
+def session_academic_topics(session_id: str):
+    session = get_session(session_id)
+    if not session:
+        return jsonify({"error": "session not found"}), 404
+
+    topics = extract_academic_topics(
+        session.raw_initial_text or "",
+        conversation_history=session.history or [],
+    )
+
+    meta = dict(session.meta or {})
+    meta["academic_topics"] = topics
+    session.meta = meta
+    save_session(session)
+
+    return jsonify(
+        {
+            "session_id": str(session.id),
+            "status": session.status,
+            **topics,
         }
     )
 
